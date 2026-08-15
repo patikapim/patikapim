@@ -3,9 +3,9 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient.js";
 import {
   PawPrint, Dog, Cat, Lock, Camera, Calendar, AlertTriangle,
-  Check, Send, ShieldAlert
+  Check, Send, ShieldAlert, Info, BookOpen
 } from "lucide-react";
-import { fmtDate, stampParts, daysUntil, nextDueStatus, STATUS_LABEL, STATUS_COLOR } from "../lib/helpers.js";
+import { fmtDate, stampParts, daysUntil, vaccineStatus, STATUS_LABEL, STATUS_COLOR, VACCINE_INFO } from "../lib/helpers.js";
 
 const SpeciesIcon = ({ species, ...p }) => {
   if (species === "Kedi") return <Cat {...p} />;
@@ -15,7 +15,7 @@ const SpeciesIcon = ({ species, ...p }) => {
 
 export default function Owner() {
   const { slug } = useParams();
-  const [status, setStatus] = useState("loading"); // loading, pin_required, ok, not_found
+  const [status, setStatus] = useState("loading");
   const [pin, setPin] = useState("");
   const [pinErr, setPinErr] = useState("");
   const [patient, setPatient] = useState(null);
@@ -24,6 +24,7 @@ export default function Owner() {
   const [reqMsg, setReqMsg] = useState("");
   const [reqSent, setReqSent] = useState(false);
   const [reqLoading, setReqLoading] = useState(false);
+  const [tab, setTab] = useState("karne");
   const fileInputRef = useRef(null);
   const verifiedPin = useRef(null);
 
@@ -84,9 +85,7 @@ export default function Owner() {
     else flash("Talep gönderilemedi, tekrar deneyin.");
   }
 
-  if (status === "loading") {
-    return <CenterMsg><div className="spinner" /></CenterMsg>;
-  }
+  if (status === "loading") return <CenterMsg><div className="spinner" /></CenterMsg>;
   if (status === "not_found") {
     return (
       <CenterMsg>
@@ -114,9 +113,11 @@ export default function Owner() {
     );
   }
 
-  const vaccines = [...(patient.vaccines || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
-  const withNext = (patient.vaccines || []).filter((v) => v.next_due);
-  const soonest = withNext.sort((a, b) => new Date(a.next_due) - new Date(b.next_due))[0];
+  const all = patient.vaccines || [];
+  const planned = all.filter((v) => !v.administered_date).sort((a, b) => new Date(a.planned_date) - new Date(b.planned_date));
+  const done = all.filter((v) => v.administered_date).sort((a, b) => new Date(b.administered_date) - new Date(a.administered_date));
+  const soonest = planned[0];
+  const info = VACCINE_INFO[patient.species] || null;
 
   return (
     <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
@@ -159,75 +160,128 @@ export default function Owner() {
           )}
         </div>
 
-        {soonest && (() => {
-          const st = nextDueStatus(soonest.next_due);
-          const c = STATUS_COLOR[st];
-          const d = daysUntil(soonest.next_due);
-          return (
-            <div className="card" style={{ padding: 16, marginBottom: 18, background: c.bg, borderColor: c.border, display: "flex", gap: 12, alignItems: "center" }}>
-              {st === "overdue" ? <AlertTriangle size={20} color={c.text} /> : <Calendar size={20} color={c.text} />}
-              <div style={{ fontSize: 13 }}>
-                <div style={{ fontWeight: 700, color: c.text }}>
-                  {soonest.name} · {fmtDate(soonest.next_due)}
-                </div>
-                <div style={{ color: "rgba(42,36,28,0.6)" }}>
-                  {st === "overdue" ? `${Math.abs(d)} gün gecikti` : `${d} gün kaldı`}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        <div className="font-mono" style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)", marginBottom: 10 }}>
-          Aşı Geçmişi
+        <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "var(--paper)", padding: 4, borderRadius: 12, border: "1px solid rgba(20,40,60,0.1)" }}>
+          <button onClick={() => setTab("karne")} className="btn" style={{ flex: 1, background: tab === "karne" ? "var(--navy)" : "transparent", color: tab === "karne" ? "var(--cream)" : "var(--ink)", padding: "9px" }}>
+            <PawPrint size={14} /> Aşı Karnesi
+          </button>
+          <button onClick={() => setTab("bilgi")} className="btn" style={{ flex: 1, background: tab === "bilgi" ? "var(--navy)" : "transparent", color: tab === "bilgi" ? "var(--cream)" : "var(--ink)", padding: "9px" }}>
+            <BookOpen size={14} /> Bilgilendirme
+          </button>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
-          {vaccines.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: "24px 0" }}>Henüz kayıtlı aşı yok.</div>}
-          {vaccines.map((v, i) => {
-            const st = nextDueStatus(v.next_due);
-            return (
-              <div key={v.id} className="card" style={{ padding: 12, display: "flex", gap: 12, alignItems: "flex-start", background: "white" }}>
-                <div className="stamp" style={{ transform: `rotate(${((i % 3) - 1) * 4}deg)` }}>
-                  <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, lineHeight: 1 }}>{stampParts(v.date).d}</span>
-                  <span className="font-mono" style={{ fontSize: 9, lineHeight: 1 }}>{stampParts(v.date).m}</span>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>{v.name}</span>
-                    <span className="badge" style={{ background: "#5C7A661A", borderColor: "#5C7A664D", color: "#3F5A4C" }}>
-                      <Check size={11} /> Yapıldı
-                    </span>
+
+        {tab === "karne" && (
+          <>
+            {soonest && (() => {
+              const st = vaccineStatus(soonest);
+              const c = STATUS_COLOR[st];
+              const d = daysUntil(soonest.planned_date);
+              return (
+                <div className="card" style={{ padding: 16, marginBottom: 18, background: c.bg, borderColor: c.border, display: "flex", gap: 12, alignItems: "center" }}>
+                  {st === "overdue" ? <AlertTriangle size={20} color={c.text} /> : <Calendar size={20} color={c.text} />}
+                  <div style={{ fontSize: 13 }}>
+                    <div style={{ fontWeight: 700, color: c.text }}>{soonest.name} · {fmtDate(soonest.planned_date)}</div>
+                    <div style={{ color: "rgba(42,36,28,0.6)" }}>{st === "overdue" ? `${Math.abs(d)} gün gecikti` : `${d} gün kaldı`}</div>
                   </div>
-                  <div style={{ fontSize: 12, color: "rgba(42,36,28,0.55)", margin: "3px 0" }}>{fmtDate(v.date)}</div>
-                  {v.next_due && st && (
-                    <span className="badge" style={{ background: STATUS_COLOR[st].bg, borderColor: STATUS_COLOR[st].border, color: STATUS_COLOR[st].text, marginTop: 2 }}>
-                      <Calendar size={11} /> {STATUS_LABEL[st]}: {fmtDate(v.next_due)}
-                    </span>
-                  )}
-                  {v.notes && <div style={{ fontSize: 12, color: "rgba(42,36,28,0.45)", marginTop: 6, fontStyle: "italic" }}>{v.notes}</div>}
+                </div>
+              );
+            })()}
+
+            {planned.length > 0 && (
+              <>
+                <div className="font-mono" style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)", marginBottom: 10 }}>
+                  Planlanan Aşılar
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
+                  {planned.map((v) => {
+                    const st = vaccineStatus(v);
+                    return (
+                      <div key={v.id} className="card" style={{ padding: 12, display: "flex", gap: 12, alignItems: "flex-start", background: "white" }}>
+                        <div className="stamp" style={{ borderStyle: "dashed", borderColor: STATUS_COLOR[st].text, color: STATUS_COLOR[st].text }}>
+                          <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, lineHeight: 1 }}>{stampParts(v.planned_date).d}</span>
+                          <span className="font-mono" style={{ fontSize: 9, lineHeight: 1 }}>{stampParts(v.planned_date).m}</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: 700, fontSize: 14 }}>{v.name}</span>
+                            <span className="badge" style={{ background: STATUS_COLOR[st].bg, borderColor: STATUS_COLOR[st].border, color: STATUS_COLOR[st].text }}>
+                              {st === "overdue" ? <AlertTriangle size={11} /> : <Calendar size={11} />} {STATUS_LABEL[st]}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: "rgba(42,36,28,0.55)", margin: "3px 0" }}>{fmtDate(v.planned_date)}</div>
+                          {v.notes && <div style={{ fontSize: 12, color: "rgba(42,36,28,0.45)", marginTop: 4, fontStyle: "italic" }}>{v.notes}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <div className="font-mono" style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)", marginBottom: 10 }}>
+              Aşı Geçmişi
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
+              {done.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: "24px 0" }}>Henüz uygulanmış aşı yok.</div>}
+              {done.map((v, i) => (
+                <div key={v.id} className="card" style={{ padding: 12, display: "flex", gap: 12, alignItems: "flex-start", background: "white" }}>
+                  <div className="stamp" style={{ transform: `rotate(${((i % 3) - 1) * 4}deg)` }}>
+                    <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, lineHeight: 1 }}>{stampParts(v.administered_date).d}</span>
+                    <span className="font-mono" style={{ fontSize: 9, lineHeight: 1 }}>{stampParts(v.administered_date).m}</span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{v.name}</span>
+                      <span className="badge" style={{ background: "#5C7A661A", borderColor: "#5C7A664D", color: "#3F5A4C" }}>
+                        <Check size={11} /> Yapıldı
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "rgba(42,36,28,0.55)", margin: "3px 0" }}>{fmtDate(v.administered_date)}</div>
+                    {v.notes && <div style={{ fontSize: 12, color: "rgba(42,36,28,0.45)", marginTop: 4, fontStyle: "italic" }}>{v.notes}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="card" style={{ padding: 18 }}>
+              {reqSent ? (
+                <div style={{ textAlign: "center", padding: "8px 0", color: "var(--green)", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <Check size={16} /> Randevu talebiniz alındı, sizinle iletişime geçilecek.
+                </div>
+              ) : (
+                <>
+                  <div className="font-mono" style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)", marginBottom: 8 }}>
+                    Randevu Talep Et
+                  </div>
+                  <textarea className="input" rows={2} placeholder="Not (opsiyonel)" value={reqMsg} onChange={(e) => setReqMsg(e.target.value)} style={{ marginBottom: 10, resize: "vertical" }} />
+                  <button className="btn btn-gold" style={{ width: "100%" }} onClick={submitAppointment} disabled={reqLoading}>
+                    <Send size={15} /> {reqLoading ? "Gönderiliyor…" : "Randevu Talep Et"}
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {tab === "bilgi" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {!info && (
+              <div style={{ fontSize: 13, color: "rgba(42,36,28,0.5)", textAlign: "center", padding: "24px 0" }}>
+                Bu tür için henüz bilgilendirme içeriği eklenmedi.
+              </div>
+            )}
+            {info && info.map((item) => (
+              <div key={item.title} className="card" style={{ padding: 14, background: "white", display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{ width: 30, height: 30, borderRadius: 999, background: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Info size={14} color="var(--cream)" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{item.title}</div>
+                  <div style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", marginTop: 2, lineHeight: 1.4 }}>{item.desc}</div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-
-        <div className="card" style={{ padding: 18 }}>
-          {reqSent ? (
-            <div style={{ textAlign: "center", padding: "8px 0", color: "var(--green)", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <Check size={16} /> Randevu talebiniz alındı, sizinle iletişime geçilecek.
-            </div>
-          ) : (
-            <>
-              <div className="font-mono" style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)", marginBottom: 8 }}>
-                Randevu Talep Et
-              </div>
-              <textarea className="input" rows={2} placeholder="Not (opsiyonel)" value={reqMsg} onChange={(e) => setReqMsg(e.target.value)} style={{ marginBottom: 10, resize: "vertical" }} />
-              <button className="btn btn-gold" style={{ width: "100%" }} onClick={submitAppointment} disabled={reqLoading}>
-                <Send size={15} /> {reqLoading ? "Gönderiliyor…" : "Randevu Talep Et"}
-              </button>
-            </>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
 
         <div style={{ marginTop: 24, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "rgba(42,36,28,0.35)", fontSize: 11 }}>
           <ShieldAlert size={12} /> Bu bağlantıyı yalnızca güvendiğiniz kişilerle paylaşın.
