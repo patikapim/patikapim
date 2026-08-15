@@ -30,23 +30,94 @@ export function daysUntil(iso) {
   return Math.round((d - today) / 86400000);
 }
 
-// Returns status for a vaccine's next-due date: 'overdue' | 'soon' | 'planned' | null
-export function nextDueStatus(nextDueIso) {
-  if (!nextDueIso) return null;
-  const days = daysUntil(nextDueIso);
-  if (days < 0) return "overdue";
-  if (days <= 30) return "soon";
-  return "planned";
+export function addWeeks(startIso, weeks) {
+  const d = new Date(startIso + "T00:00:00");
+  d.setDate(d.getDate() + weeks * 7);
+  return d.toISOString().slice(0, 10);
+}
+export function addMonths(startIso, months) {
+  const d = new Date(startIso + "T00:00:00");
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+export function addYears(startIso, years) {
+  const d = new Date(startIso + "T00:00:00");
+  d.setFullYear(d.getFullYear() + years);
+  return d.toISOString().slice(0, 10);
+}
+export function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function vaccineStatus(v) {
+  if (v.administered_date) return "yapildi";
+  const days = daysUntil(v.planned_date);
+  if (days === null) return "planned";
+  return days < 0 ? "overdue" : "planned";
 }
 
 export const STATUS_LABEL = {
+  yapildi: "Yapıldı",
   overdue: "Zamanı Geçti",
-  soon: "Yaklaşıyor",
   planned: "Planlandı",
 };
 
 export const STATUS_COLOR = {
+  yapildi: { bg: "#5C7A661A", border: "#5C7A664D", text: "#3F5A4C" },
   overdue: { bg: "#A23B3B1A", border: "#A23B3B4D", text: "#A23B3B" },
-  soon: { bg: "#B4913F1A", border: "#B4913F4D", text: "#93711F" },
-  planned: { bg: "#5C7A661A", border: "#5C7A664D", text: "#3F5A4C" },
+  planned: { bg: "#B4913F1A", border: "#B4913F4D", text: "#93711F" },
+};
+
+export const VACCINE_TEMPLATES = {
+  "Kedi": [
+    { name: "İç Dış Parazit", weeks: 0 },
+    { name: "Kedi Karma 1", weeks: 1 },
+    { name: "Kedi Karma 2", weeks: 2 },
+    { name: "Lösemi 1", weeks: 3 },
+    { name: "Lösemi 2", weeks: 4 },
+    { name: "Kuduz", weeks: 5 },
+  ],
+  "Köpek": [
+    { name: "İç Dış Parazit", weeks: 0 },
+    { name: "Köpek Karma 1", weeks: 1 },
+    { name: "Köpek Karma 2", weeks: 2 },
+    { name: "Corona 1", weeks: 3 },
+    { name: "Corona 2", weeks: 4 },
+    { name: "Bronşin 1", weeks: 5 },
+    { name: "Bronşin 2", weeks: 6 },
+    { name: "Kuduz", weeks: 7 },
+  ],
+};
+
+export function nextAutoVaccine(v) {
+  if (!v.administered_date) return null;
+  const name = (v.name || "").trim();
+  if (name === "İç Dış Parazit") {
+    return { name: "İç Dış Parazit", planned_date: addMonths(v.administered_date, 2) };
+  }
+  if (name === "Kuduz") return null;
+  if (name.startsWith("Yıllık ")) {
+    return { name, planned_date: addYears(v.administered_date, 1) };
+  }
+  const m = name.match(/^(.+)\s+2$/);
+  if (m) {
+    return { name: `Yıllık ${m[1]}`, planned_date: addYears(v.administered_date, 1) };
+  }
+  return null;
+}
+
+export const VACCINE_INFO = {
+  "Kedi": [
+    { title: "İç Dış Parazit", desc: "Bağırsak kurtları, pire ve kene gibi parazitlere karşı düzenli koruma sağlar; ilk uygulamadan sonra 2 ayda bir tekrarlanması önerilir." },
+    { title: "Kedi Karma (FVRCP)", desc: "Kedi nezlesi, kalisivirüs ve panlökopeni gibi yaygın ve bulaşıcı hastalıklara karşı koruma sağlar; genellikle 2 doz halinde uygulanır ve sonrasında yıllık tekrarlanır." },
+    { title: "Lösemi (FeLV)", desc: "Kedi lösemi virüsüne karşı koruma sağlar; özellikle dışarı çıkan veya başka kedilerle temas eden kediler için önemlidir." },
+    { title: "Kuduz", desc: "Ölümcül seyreden kuduz virüsüne karşı koruma sağlar; yasal olarak zorunludur." },
+  ],
+  "Köpek": [
+    { title: "İç Dış Parazit", desc: "Bağırsak kurtları, pire ve kene gibi parazitlere karşı düzenli koruma sağlar; ilk uygulamadan sonra 2 ayda bir tekrarlanması önerilir." },
+    { title: "Köpek Karma (DHPPi)", desc: "Gençlik hastalığı (distemper), parvoviral enterit, hepatit ve parainfluenza gibi ciddi hastalıklara karşı koruma sağlar; genellikle 2 doz halinde uygulanır ve sonrasında yıllık tekrarlanır." },
+    { title: "Corona", desc: "Köpek koronavirüsünün neden olduğu bağırsak enfeksiyonlarına karşı koruma sağlar." },
+    { title: "Bronşin (Kennel Cough)", desc: "Bulaşıcı köpek öksürüğüne karşı koruma sağlar; barınak, pansiyon veya köpek parkı gibi ortak alanları kullanan köpekler için önemlidir." },
+    { title: "Kuduz", desc: "Ölümcül seyreden kuduz virüsüne karşı koruma sağlar; yasal olarak zorunludur." },
+  ],
 };
