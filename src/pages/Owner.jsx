@@ -3,9 +3,10 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient.js";
 import {
   PawPrint, Dog, Cat, Lock, Camera, Calendar, AlertTriangle,
-  Check, Send, ShieldAlert, Info, BookOpen, ShoppingBag, Plus, Minus, X, Banknote
+  Check, Send, ShieldAlert, Info, BookOpen, ShoppingBag, Plus, Minus, X, Banknote,
+  ChevronDown, Heart, Sparkles, ScanLine, BookMarked
 } from "lucide-react";
-import { fmtDate, stampParts, daysUntil, vaccineStatus, STATUS_LABEL, STATUS_COLOR, VACCINE_INFO, fmtPrice } from "../lib/helpers.js";
+import { fmtDate, stampParts, daysUntil, vaccineStatus, STATUS_LABEL, STATUS_COLOR, VACCINE_INFO, fmtPrice, BREED_INFO, CAT_GENERAL_TIP, PUPPY_CARE, KITTEN_CARE } from "../lib/helpers.js";
 
 const SpeciesIcon = ({ species, ...p }) => {
   if (species === "Kedi") return <Cat {...p} />;
@@ -25,6 +26,7 @@ export default function Owner() {
   const [reqSent, setReqSent] = useState(false);
   const [reqLoading, setReqLoading] = useState(false);
   const [tab, setTab] = useState("karne");
+  const [openSection, setOpenSection] = useState("asi");
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [orderSent, setOrderSent] = useState(false);
@@ -198,6 +200,20 @@ export default function Owner() {
               Sahip: <span style={{ fontWeight: 600, color: "var(--ink)" }}>{patient.owner_name}</span>
             </div>
           )}
+          {(patient.microchip_number || patient.karne_number) && (
+            <div style={{ marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
+              {patient.microchip_number && (
+                <div style={{ fontSize: 12, color: "rgba(42,36,28,0.5)" }}>
+                  Mikroçip: <span className="font-mono" style={{ color: "var(--ink)" }}>{patient.microchip_number}</span>
+                </div>
+              )}
+              {patient.karne_number && (
+                <div style={{ fontSize: 12, color: "rgba(42,36,28,0.5)" }}>
+                  Karne No: <span className="font-mono" style={{ color: "var(--ink)" }}>{patient.karne_number}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "var(--paper)", padding: 4, borderRadius: 12, border: "1px solid rgba(20,40,60,0.1)" }}>
@@ -308,26 +324,51 @@ export default function Owner() {
           </>
         )}
 
-        {tab === "bilgi" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {!info && (
-              <div style={{ fontSize: 13, color: "rgba(42,36,28,0.5)", textAlign: "center", padding: "24px 0" }}>
-                Bu tür için henüz bilgilendirme içeriği eklenmedi.
-              </div>
-            )}
-            {info && info.map((item) => (
-              <div key={item.title} className="card" style={{ padding: 14, background: "white", display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <div style={{ width: 30, height: 30, borderRadius: 999, background: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Info size={14} color="var(--cream)" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{item.title}</div>
-                  <div style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", marginTop: 2, lineHeight: 1.4 }}>{item.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {tab === "bilgi" && (() => {
+          const breedInfo = patient.breed ? BREED_INFO[patient.breed] : null;
+          const careList = patient.species === "Kedi" ? KITTEN_CARE : patient.species === "Köpek" ? PUPPY_CARE : null;
+          const careTitle = patient.species === "Kedi" ? "Yavru Kedi Bakımı" : "Yavru Köpek Bakımı";
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <Accordion id="asi" open={openSection === "asi"} onToggle={setOpenSection} icon={<Info size={15} />} title="Aşı Bilgileri">
+                {!info && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.5)" }}>Bu tür için henüz içerik eklenmedi.</div>}
+                {info && info.map((item) => (
+                  <div key={item.title} style={{ marginBottom: 10 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{item.title}</div>
+                    <div style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", marginTop: 2, lineHeight: 1.4 }}>{item.desc}</div>
+                  </div>
+                ))}
+              </Accordion>
+
+              {(breedInfo || patient.species === "Kedi") && (
+                <Accordion id="irk" open={openSection === "irk"} onToggle={setOpenSection} icon={<Heart size={15} />} title={patient.breed ? `${patient.breed} — Irk Bilgisi` : "Genel Sağlık Notu"}>
+                  {breedInfo && (
+                    <>
+                      <div style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", lineHeight: 1.4, marginBottom: 8 }}><strong>Genetik yatkınlık:</strong> {breedInfo.risk}</div>
+                      <div style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", lineHeight: 1.4, marginBottom: 10 }}><strong>Öneri:</strong> {breedInfo.tip}</div>
+                    </>
+                  )}
+                  {patient.species === "Kedi" && (
+                    <div style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", lineHeight: 1.4, marginBottom: 10 }}>{CAT_GENERAL_TIP}</div>
+                  )}
+                  <button className="btn btn-gold" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setTab("magaza")}>
+                    <ShoppingBag size={12} /> Mağazaya Git
+                  </button>
+                </Accordion>
+              )}
+
+              {careList && (
+                <Accordion id="yavru" open={openSection === "yavru"} onToggle={setOpenSection} icon={<Sparkles size={15} />} title={careTitle}>
+                  <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {careList.map((c, i) => (
+                      <li key={i} style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", lineHeight: 1.4 }}>{c}</li>
+                    ))}
+                  </ul>
+                </Accordion>
+              )}
+            </div>
+          );
+        })()}
 
         {tab === "magaza" && (
           <div>
@@ -410,6 +451,22 @@ function CenterMsg({ children }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
       {children}
+    </div>
+  );
+}
+
+function Accordion({ id, open, onToggle, icon, title, children }) {
+  return (
+    <div className="card" style={{ background: "white", overflow: "hidden" }}>
+      <button onClick={() => onToggle(open ? null : id)}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: 14, background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+        <div style={{ width: 26, height: 26, borderRadius: 999, background: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--cream)" }}>
+          {icon}
+        </div>
+        <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{title}</span>
+        <ChevronDown size={16} color="rgba(20,40,60,0.4)" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </button>
+      {open && <div style={{ padding: "0 14px 14px 50px" }}>{children}</div>}
     </div>
   );
 }
