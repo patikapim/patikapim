@@ -9,6 +9,7 @@ import {
   Copy, Check, Bell, AlertTriangle, CalendarPlus, CalendarCheck, Pencil,
   ShoppingBag, Image as ImageIcon, Users, BarChart3, Wallet, TrendingDown, TrendingUp
 } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const SpeciesIcon = ({ species, ...p }) => {
   if (species === "Kedi") return <Cat {...p} />;
@@ -93,7 +94,7 @@ function AdminLogin() {
 }
 
 function Dashboard() {
-  const [view, setView] = useState("hastalar"); // hastalar | magaza | finans
+  const [view, setView] = useState("hastalar");
   const [patients, setPatients] = useState([]);
   const [requests, setRequests] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -194,6 +195,7 @@ function Dashboard() {
       {view === "finans" && (
         <FinansView patients={patients} orders={orders} ledger={ledger}
           onAddLedger={(kind) => setShowLedgerForm(kind)}
+          onMarkOrder={async (id, status) => { await supabase.from("orders").update({ status }).eq("id", id); loadOrders(); }}
           onMarkPaid={async (id) => { await supabase.from("ledger_entries").update({ status: "odendi", paid_at: new Date().toISOString() }).eq("id", id); loadLedger(); }}
           onDeleteLedger={async (id) => { await supabase.from("ledger_entries").delete().eq("id", id); loadLedger(); }} />
       )}
@@ -838,9 +840,9 @@ function ProductFormModal({ product, onClose, onSaved }) {
   );
 }
 
-function StatCard({ icon, label, value, color }) {
+function StatCard({ icon, label, value, color, onClick }) {
   return (
-    <div className="card" style={{ padding: 16, background: "white", flex: 1, minWidth: 140 }}>
+    <button onClick={onClick} className="card" style={{ padding: 16, background: "white", flex: 1, minWidth: 140, textAlign: "left", border: "none", cursor: onClick ? "pointer" : "default" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <div style={{ width: 26, height: 26, borderRadius: 999, background: color || "var(--navy)", display: "flex", alignItems: "center", justifyContent: "center", color: "white" }}>
           {icon}
@@ -848,23 +850,28 @@ function StatCard({ icon, label, value, color }) {
         <span style={{ fontSize: 12, color: "rgba(42,36,28,0.55)" }}>{label}</span>
       </div>
       <div className="font-display" style={{ fontSize: 22 }}>{value}</div>
-    </div>
+    </button>
   );
 }
 
-function FinansView({ patients, orders, ledger, onAddLedger, onMarkPaid, onDeleteLedger }) {
+function FinansView({ patients, orders, ledger, onAddLedger, onMarkOrder, onMarkPaid, onDeleteLedger }) {
+  const [detail, setDetail] = useState(null);
+  const [chartRange, setChartRange] = useState("ay");
   const now = new Date();
   const thisMonth = now.getMonth();
   const thisYear = now.getFullYear();
 
-  const vaccinesThisMonth = patients.reduce((sum, p) => {
-    const count = (p.vaccines || []).filter((v) => {
-      if (!v.administered_date) return false;
+  const vaccinesThisMonthList = [];
+  patients.forEach((p) => {
+    (p.vaccines || []).forEach((v) => {
+      if (!v.administered_date) return;
       const d = new Date(v.administered_date + "T00:00:00");
-      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-    }).length;
-    return sum + count;
-  }, 0);
+      if (d.getMonth() === thisMonth && d.getFullYear() === thisYear) {
+        vaccinesThisMonthList.push({ ...v, petName: p.pet_name, ownerName: p.owner_name });
+      }
+    });
+  });
+  vaccinesThisMonthList.sort((a, b) => new Date(b.administered_date) - new Date(a.administered_date));
 
   const ordersThisMonth = orders.filter((o) => {
     const d = new Date(o.created_at);
@@ -877,13 +884,46 @@ function FinansView({ patients, orders, ledger, onAddLedger, onMarkPaid, onDelet
   const tedarikciAcikToplam = tedarikci.filter((l) => l.status === "acik").reduce((s, l) => s + Number(l.amount), 0);
   const hastaAcikToplam = hasta.filter((l) => l.status === "acik").reduce((s, l) => s + Number(l.amount), 0);
 
+  const MONTH_LABELS = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+
+  function sumInRange(start, end) {
+    const ciro = orders.filter((o) => { const d = new Date(o.created_at); return d >= start && d < end; })
+      .reduce((s, o) => s + Number(o.total), 0);
+    const borc = ledger.filter((l) => { const d = new Date(l.created_at); return l.kind === "tedarikci_borcu" && d >= start && d < end; })
+      .reduce((s, l) => s + Number(l.amount), 0);
+    const alacak = ledger.filter((l) => { const d = new Date(l.created_at); return l.kind === "hasta_borcu" && d >= start && d < end; })
+      .reduce((s, l) => s + Number(l.amount), 0);
+    return { Ciro: ciro, "Tedarikçi Borcu": borc, "Hasta Alacağı": alacak };
+  }
+
+  const monthlyData = [];
+  if (chartRange === "gun") {
+    for (let i = 6; i >= 0; i--) {
+      const start = new Date(thisYear, now.getMonth(), now.getDate() - i, 0, 0, 0, 0);
+      const end = new Date(start); end.setDate(end.getDate() + 1);
+      monthlyData.push({ month: start.toLocaleDateString("tr-TR", { day: "2-digit", month: "short" }), ...sumInRange(start, end) });
+    }
+  } else if (chartRange === "hafta") {
+    for (let i = 7; i >= 0; i--) {
+      const start = new Date(thisYear, now.getMonth(), now.getDate() - i * 7, 0, 0, 0, 0);
+      const end = new Date(start); end.setDate(end.getDate() + 7);
+      monthlyData.push({ month: start.toLocaleDateString("tr-TR", { day: "2-digit", month: "short" }), ...sumInRange(start, end) });
+    }
+  } else {
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(thisYear, thisMonth - i, 1);
+      const end = new Date(thisYear, thisMonth - i + 1, 1);
+      monthlyData.push({ month: MONTH_LABELS[start.getMonth()], ...sumInRange(start, end) });
+    }
+  }
+
   return (
     <div className="container-wide" style={{ paddingTop: 16, paddingBottom: 30 }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
-        <StatCard icon={<Users size={13} />} label="Aktif Hasta" value={patients.length} />
-        <StatCard icon={<Syringe size={13} />} label="Bu Ay Yapılan Aşı" value={vaccinesThisMonth} color="var(--green)" />
-        <StatCard icon={<ShoppingBag size={13} />} label="Bu Ay Sipariş" value={ordersThisMonth.length} color="var(--gold)" />
-        <StatCard icon={<Wallet size={13} />} label="Bu Ay Ciro" value={fmtPrice(revenueThisMonth)} color="var(--gold)" />
+        <StatCard icon={<Users size={13} />} label="Aktif Hasta" value={patients.length} onClick={() => setDetail("hasta")} />
+        <StatCard icon={<Syringe size={13} />} label="Bu Ay Yapılan Aşı" value={vaccinesThisMonthList.length} color="var(--green)" onClick={() => setDetail("asi")} />
+        <StatCard icon={<ShoppingBag size={13} />} label="Bu Ay Sipariş" value={ordersThisMonth.length} color="var(--gold)" onClick={() => setDetail("siparis")} />
+        <StatCard icon={<Wallet size={13} />} label="Bu Ay Ciro" value={fmtPrice(revenueThisMonth)} color="var(--gold)" onClick={() => setDetail("siparis")} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 800 ? "1fr 1fr" : "1fr", gap: 16 }}>
@@ -894,6 +934,73 @@ function FinansView({ patients, orders, ledger, onAddLedger, onMarkPaid, onDelet
           icon={<TrendingUp size={15} />} entries={hasta} total={hastaAcikToplam}
           onAdd={() => onAddLedger("hasta_borcu")} onMarkPaid={onMarkPaid} onDelete={onDeleteLedger} />
       </div>
+
+      <div className="card" style={{ padding: 18, background: "white", marginTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Ciro, Borç, Alacak</div>
+            <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>Seçilen aralığa göre gruplanmış tutarlar</div>
+          </div>
+          <div style={{ display: "flex", gap: 4, background: "var(--paper)", padding: 3, borderRadius: 10 }}>
+            {[["gun", "Gün"], ["hafta", "Hafta"], ["ay", "Ay"]].map(([key, label]) => (
+              <button key={key} onClick={() => setChartRange(key)}
+                className="btn" style={{ padding: "5px 12px", fontSize: 12, background: chartRange === key ? "var(--navy)" : "transparent", color: chartRange === key ? "var(--cream)" : "var(--ink)" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={monthlyData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(20,40,60,0.08)" />
+            <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <Tooltip formatter={(v) => fmtPrice(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Bar dataKey="Ciro" fill="#B4913F" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Tedarikçi Borcu" fill="#A23B3B" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Hasta Alacağı" fill="#5C7A66" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {detail === "hasta" && (
+        <Modal title="Aktif Hastalar" icon={<Users size={17} />} onClose={() => setDetail(null)} wide>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "60vh", overflowY: "auto" }}>
+            {patients.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Henüz hasta yok.</div>}
+            {patients.map((p) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10 }}>
+                <SpeciesIcon species={p.species} size={16} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{p.pet_name}</div>
+                  <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{p.species}{p.breed ? ` · ${p.breed}` : ""} · {p.owner_name || "—"}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {detail === "asi" && (
+        <Modal title="Bu Ay Yapılan Aşılar" icon={<Syringe size={17} />} onClose={() => setDetail(null)} wide>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "60vh", overflowY: "auto" }}>
+            {vaccinesThisMonthList.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Bu ay henüz aşı yapılmadı.</div>}
+            {vaccinesThisMonthList.map((v) => (
+              <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{v.name} <span style={{ fontWeight: 400, opacity: 0.6 }}>· {v.petName}</span></div>
+                  <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{v.ownerName || "—"}</div>
+                </div>
+                <span className="font-mono" style={{ fontSize: 12, color: "rgba(42,36,28,0.55)" }}>{fmtDate(v.administered_date)}</span>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {detail === "siparis" && (
+        <OrdersModal orders={ordersThisMonth} onClose={() => setDetail(null)} onMark={onMarkOrder} />
+      )}
     </div>
   );
 }
