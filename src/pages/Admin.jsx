@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient.js";
-import { genSlug, fmtDate, stampParts, nextDueStatus, STATUS_LABEL, STATUS_COLOR } from "../lib/helpers.js";
+import {
+  genSlug, fmtDate, stampParts, vaccineStatus, STATUS_LABEL, STATUS_COLOR,
+  VACCINE_TEMPLATES, addWeeks, nextAutoVaccine, todayIso,
+} from "../lib/helpers.js";
 import {
   Lock, LogOut, Plus, Search, X, Trash2, Syringe, PawPrint, Dog, Cat,
-  Copy, Check, Bell, ChevronLeft, AlertTriangle
+  Copy, Check, Bell, AlertTriangle, CalendarPlus, CalendarCheck
 } from "lucide-react";
 
 const SpeciesIcon = ({ species, ...p }) => {
@@ -13,7 +16,7 @@ const SpeciesIcon = ({ species, ...p }) => {
 };
 
 export default function Admin() {
-  const [session, setSession] = useState(undefined); // undefined=loading, null=signed out
+  const [session, setSession] = useState(undefined);
   const [isAdmin, setIsAdmin] = useState(null);
 
   useEffect(() => {
@@ -96,6 +99,8 @@ function Dashboard() {
   const [showNewPatient, setShowNewPatient] = useState(false);
   const [showNewVaccine, setShowNewVaccine] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [markDoneTarget, setMarkDoneTarget] = useState(null);
   const [toast, setToast] = useState("");
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
@@ -118,10 +123,20 @@ function Dashboard() {
   const pendingCount = requests.filter((r) => r.status === "beklemede").length;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
+  async function markVaccineDone(vaccine, administeredDate) {
+    await supabase.from("vaccines").update({ administered_date: administeredDate }).eq("id", vaccine.id);
+    const next = nextAutoVaccine({ ...vaccine, administered_date: administeredDate });
+    if (next) {
+      await supabase.from("vaccines").insert({ patient_id: vaccine.patient_id, name: next.name, planned_date: next.planned_date });
+    }
+    await loadPatients();
+    flash(next ? `Yapıldı — "${next.name}" otomatik planlandı.` : "Yapıldı olarak işaretlendi.");
+  }
+
   return (
     <div style={{ minHeight: "100vh" }}>
       {toast && (
-        <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "var(--navy)", color: "var(--cream)", padding: "8px 16px", borderRadius: 999, fontSize: 13, fontWeight: 600 }}>{toast}</div>
+        <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "var(--navy)", color: "var(--cream)", padding: "8px 16px", borderRadius: 999, fontSize: 13, fontWeight: 600, maxWidth: "90vw", textAlign: "center" }}>{toast}</div>
       )}
       <header style={{ background: "var(--navy)", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -189,6 +204,8 @@ function Dashboard() {
                   flash("Hasta kaydı silindi.");
                 }}
                 onAddVaccine={() => setShowNewVaccine(true)}
+                onApplySchedule={() => setShowSchedule(true)}
+                onMarkDone={(v) => setMarkDoneTarget(v)}
                 onDeleteVaccine={async (vid) => {
                   await supabase.from("vaccines").delete().eq("id", vid);
                   loadPatients();
@@ -208,6 +225,16 @@ function Dashboard() {
           onClose={() => setShowNewVaccine(false)}
           onSaved={() => { loadPatients(); flash("Aşı kaydı eklendi."); setShowNewVaccine(false); }} />
       )}
+      {showSchedule && selected && (
+        <ScheduleModal patient={selected}
+          onClose={() => setShowSchedule(false)}
+          onApplied={(count) => { loadPatients(); flash(`${count} aşı planlandı.`); setShowSchedule(false); }} />
+      )}
+      {markDoneTarget && (
+        <MarkDoneModal vaccine={markDoneTarget}
+          onClose={() => setMarkDoneTarget(null)}
+          onConfirm={async (date) => { await markVaccineDone(markDoneTarget, date); setMarkDoneTarget(null); }} />
+      )}
       {showRequests && (
         <RequestsModal requests={requests} onClose={() => setShowRequests(false)}
           onMark={async (id, status) => { await supabase.from("appointment_requests").update({ status }).eq("id", id); loadRequests(); }} />
@@ -216,9 +243,13 @@ function Dashboard() {
   );
 }
 
-function PatientDetail({ patient, origin, onDelete, onAddVaccine, onDeleteVaccine, onCopyLink }) {
+function PatientDetail({ patient, origin, onDelete, onAddVaccine, onApplySchedule, onMarkDone, onDeleteVaccine, onCopyLink }) {
   const link = `${origin}/hasta/${patient.slug}`;
-  const vaccines = [...(patient.vaccines || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const all = patient.vaccines || [];
+  const planned = all.filter((v) => !v.administered_date).sort((a, b) => new Date(a.planned_date) - new Date(b.planned_date));
+  const done = all.filter((v) => v.administered_date).sort((a, b) => new Date(b.administered_date) - new Date(a.administered_date));
+  const hasTemplate = patient.species === "Kedi" || patient.species === "Köpek";
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
@@ -241,39 +272,75 @@ function PatientDetail({ patient, origin, onDelete, onAddVaccine, onDeleteVaccin
       </div>
       {patient.pin && <p style={{ fontSize: 12, color: "rgba(42,36,28,0.5)", marginTop: -10, marginBottom: 14 }}>PIN: <span className="font-mono">{patient.pin}</span></p>}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <span className="font-mono" style={{ fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)" }}>Aşı Geçmişi ({vaccines.length})</span>
-        <button className="btn btn-primary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={onAddVaccine}>
-          <Syringe size={13} /> Aşı Ekle
-        </button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <span className="font-mono" style={{ fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)" }}>
+          Aşılar ({all.length})
+        </span>
+        <div style={{ display: "flex", gap: 8 }}>
+          {hasTemplate && (
+            <button className="btn btn-outline" style={{ padding: "7px 12px", fontSize: 12 }} onClick={onApplySchedule}>
+              <CalendarPlus size={13} /> {patient.species} Aşı Programını Uygula
+            </button>
+          )}
+          <button className="btn btn-primary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={onAddVaccine}>
+            <Syringe size={13} /> Aşı Ekle
+          </button>
+        </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {vaccines.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: 20 }}>Henüz kayıtlı aşı yok.</div>}
-        {vaccines.map((v) => {
-          const st = nextDueStatus(v.next_due);
-          return (
-            <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 12, padding: "8px 10px" }}>
-              <div className="stamp" style={{ width: 42, height: 42 }}>
-                <span className="font-mono" style={{ fontSize: 10, fontWeight: 700, lineHeight: 1 }}>{stampParts(v.date).d}</span>
-                <span className="font-mono" style={{ fontSize: 8, lineHeight: 1 }}>{stampParts(v.date).m}</span>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{v.name}</div>
-                <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>
-                  {fmtDate(v.date)}{v.next_due ? ` · Sıradaki: ${fmtDate(v.next_due)}` : ""}
+
+      {planned.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(42,36,28,0.45)", margin: "10px 0 6px" }}>PLANLANAN</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+            {planned.map((v) => {
+              const st = vaccineStatus(v);
+              return (
+                <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 12, padding: "8px 10px" }}>
+                  <div className="stamp" style={{ width: 42, height: 42, borderStyle: "dashed", borderColor: STATUS_COLOR[st].text, color: STATUS_COLOR[st].text }}>
+                    <span className="font-mono" style={{ fontSize: 10, fontWeight: 700, lineHeight: 1 }}>{stampParts(v.planned_date).d}</span>
+                    <span className="font-mono" style={{ fontSize: 8, lineHeight: 1 }}>{stampParts(v.planned_date).m}</span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{v.name}</div>
+                    <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{fmtDate(v.planned_date)}</div>
+                    <span className="badge" style={{ marginTop: 4, background: STATUS_COLOR[st].bg, borderColor: STATUS_COLOR[st].border, color: STATUS_COLOR[st].text }}>
+                      {STATUS_LABEL[st]}
+                    </span>
+                  </div>
+                  <button onClick={() => onMarkDone(v)} className="btn btn-outline" style={{ padding: "5px 9px", fontSize: 11 }}>
+                    <CalendarCheck size={12} /> Yapıldı
+                  </button>
+                  <button onClick={() => onDeleteVaccine(v.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}>
+                    <X size={15} />
+                  </button>
                 </div>
-                {st && (
-                  <span className="badge" style={{ marginTop: 4, background: STATUS_COLOR[st].bg, borderColor: STATUS_COLOR[st].border, color: STATUS_COLOR[st].text }}>
-                    {STATUS_LABEL[st]}
-                  </span>
-                )}
-              </div>
-              <button onClick={() => onDeleteVaccine(v.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}>
-                <X size={15} />
-              </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(42,36,28,0.45)", margin: "10px 0 6px" }}>GEÇMİŞ</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {done.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: 20 }}>Henüz uygulanmış aşı yok.</div>}
+        {done.map((v) => (
+          <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 12, padding: "8px 10px" }}>
+            <div className="stamp" style={{ width: 42, height: 42 }}>
+              <span className="font-mono" style={{ fontSize: 10, fontWeight: 700, lineHeight: 1 }}>{stampParts(v.administered_date).d}</span>
+              <span className="font-mono" style={{ fontSize: 8, lineHeight: 1 }}>{stampParts(v.administered_date).m}</span>
             </div>
-          );
-        })}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{v.name}</div>
+              <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{fmtDate(v.administered_date)}</div>
+              <span className="badge" style={{ marginTop: 4, background: "#5C7A661A", borderColor: "#5C7A664D", color: "#3F5A4C" }}>
+                <Check size={11} /> Yapıldı
+              </span>
+            </div>
+            <button onClick={() => onDeleteVaccine(v.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}>
+              <X size={15} />
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -282,7 +349,7 @@ function PatientDetail({ patient, origin, onDelete, onAddVaccine, onDeleteVaccin
 function Modal({ title, icon, onClose, children }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(20,40,60,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 40 }} onClick={onClose}>
-      <div className="card" style={{ padding: 22, width: "100%", maxWidth: 380, background: "var(--paper)" }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ padding: 22, width: "100%", maxWidth: 400, background: "var(--paper)", maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <h3 className="font-display" style={{ fontSize: 19, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>{icon}{title}</h3>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
@@ -339,24 +406,28 @@ function NewPatientModal({ onClose, onSaved }) {
       <button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving}>
         {saving ? "Kaydediliyor…" : "Hastayı Kaydet"}
       </button>
+      <p style={{ fontSize: 11, color: "rgba(42,36,28,0.45)", marginTop: 10 }}>
+        Kayıttan sonra, hasta seçiliyken "Aşı Programını Uygula" ile standart aşı takvimini otomatik oluşturabilirsin.
+      </p>
     </Modal>
   );
 }
 
 function NewVaccineModal({ patientId, petName, onClose, onSaved }) {
   const [name, setName] = useState("");
-  const [date, setDate] = useState("");
-  const [nextDue, setNextDue] = useState("");
+  const [status, setStatus] = useState("planlandi");
+  const [dateVal, setDateVal] = useState(todayIso());
   const [notes, setNotes] = useState("");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function save() {
-    if (!name || !date) { setErr("Aşı adı ve tarih zorunlu."); return; }
+    if (!name || !dateVal) { setErr("Aşı adı ve tarih zorunlu."); return; }
     setSaving(true);
-    const { error } = await supabase.from("vaccines").insert({
-      patient_id: patientId, name, date, next_due: nextDue || null, notes: notes || null,
-    });
+    const payload = status === "yapildi"
+      ? { patient_id: patientId, name, planned_date: dateVal, administered_date: dateVal, notes: notes || null }
+      : { patient_id: patientId, name, planned_date: dateVal, administered_date: null, notes: notes || null };
+    const { error } = await supabase.from("vaccines").insert(payload);
     setSaving(false);
     if (error) { setErr("Kaydedilemedi, tekrar deneyin."); return; }
     onSaved();
@@ -364,13 +435,88 @@ function NewVaccineModal({ patientId, petName, onClose, onSaved }) {
 
   return (
     <Modal title={`Aşı Ekle · ${petName}`} icon={<Syringe size={17} />} onClose={onClose}>
-      <Field label="Aşı adı (örn. Kuduz, Karma)"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-      <Field label="Uygulama tarihi"><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-      <Field label="Sıradaki tarih (opsiyonel)"><input className="input" type="date" value={nextDue} onChange={(e) => setNextDue(e.target.value)} /></Field>
+      <Field label="Aşı adı (örn. Kuduz, Kedi Karma 1, Lösemi 2)"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Durum">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setStatus("planlandi")}
+            className="btn" style={{ flex: 1, background: status === "planlandi" ? "var(--navy)" : "white", color: status === "planlandi" ? "var(--cream)" : "var(--ink)", border: "1px solid rgba(20,40,60,0.15)" }}>
+            Planlandı
+          </button>
+          <button type="button" onClick={() => setStatus("yapildi")}
+            className="btn" style={{ flex: 1, background: status === "yapildi" ? "var(--navy)" : "white", color: status === "yapildi" ? "var(--cream)" : "var(--ink)", border: "1px solid rgba(20,40,60,0.15)" }}>
+            Yapıldı
+          </button>
+        </div>
+      </Field>
+      <Field label={status === "yapildi" ? "Uygulama tarihi" : "Planlanan tarih"}>
+        <input className="input" type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} />
+      </Field>
       <Field label="Not (opsiyonel)"><input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       {err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
       <button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving}>
         {saving ? "Kaydediliyor…" : "Kaydet"}
+      </button>
+    </Modal>
+  );
+}
+
+function ScheduleModal({ patient, onClose, onApplied }) {
+  const template = VACCINE_TEMPLATES[patient.species] || [];
+  const [startDate, setStartDate] = useState(todayIso());
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function apply() {
+    setSaving(true);
+    const rows = template.map((t) => ({
+      patient_id: patient.id, name: t.name, planned_date: addWeeks(startDate, t.weeks),
+    }));
+    const { error } = await supabase.from("vaccines").insert(rows);
+    setSaving(false);
+    if (error) { setErr("Uygulanamadı, tekrar deneyin."); return; }
+    onApplied(rows.length);
+  }
+
+  return (
+    <Modal title={`${patient.species} Aşı Programı`} icon={<CalendarPlus size={17} />} onClose={onClose}>
+      <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", marginBottom: 12 }}>
+        {patient.pet_name} için standart {patient.species.toLowerCase()} aşı takvimi, aşağıdaki başlangıç tarihine göre otomatik planlanacak (aşılar 1'er hafta ara ile sıralanır).
+      </p>
+      <Field label="Başlangıç tarihi (ilk aşı)">
+        <input className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+      </Field>
+      <div style={{ background: "white", borderRadius: 10, border: "1px solid rgba(20,40,60,0.1)", padding: 10, marginBottom: 12, maxHeight: 180, overflowY: "auto" }}>
+        {template.map((t) => (
+          <div key={t.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
+            <span>{t.name}</span>
+            <span style={{ color: "rgba(42,36,28,0.5)" }} className="font-mono">{fmtDate(addWeeks(startDate, t.weeks))}</span>
+          </div>
+        ))}
+      </div>
+      {err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      <button className="btn btn-primary" style={{ width: "100%" }} onClick={apply} disabled={saving}>
+        {saving ? "Uygulanıyor…" : `${template.length} Aşıyı Planla`}
+      </button>
+    </Modal>
+  );
+}
+
+function MarkDoneModal({ vaccine, onClose, onConfirm }) {
+  const [date, setDate] = useState(todayIso());
+  const preview = nextAutoVaccine({ ...vaccine, administered_date: date });
+  return (
+    <Modal title={`Yapıldı Olarak İşaretle`} icon={<CalendarCheck size={17} />} onClose={onClose}>
+      <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", marginBottom: 12 }}><strong>{vaccine.name}</strong> için uygulama tarihini onayla.</p>
+      <Field label="Uygulama tarihi">
+        <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+      {preview && (
+        <div style={{ fontSize: 12, color: "rgba(42,36,28,0.55)", background: "white", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+          Otomatik olarak <strong>"{preview.name}"</strong> için {fmtDate(preview.planned_date)} tarihine yeni bir plan oluşturulacak.
+        </div>
+      )}
+      <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => onConfirm(date)}>
+        <Check size={15} /> Onayla
       </button>
     </Modal>
   );
