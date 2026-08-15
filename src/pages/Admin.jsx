@@ -7,7 +7,7 @@ import {
 import {
   Lock, LogOut, Plus, Search, X, Trash2, Syringe, PawPrint, Dog, Cat,
   Copy, Check, Bell, AlertTriangle, CalendarPlus, CalendarCheck, Pencil,
-  ShoppingBag, Image as ImageIcon, Users
+  ShoppingBag, Image as ImageIcon, Users, BarChart3, Wallet, TrendingDown, TrendingUp
 } from "lucide-react";
 
 const SpeciesIcon = ({ species, ...p }) => {
@@ -93,11 +93,12 @@ function AdminLogin() {
 }
 
 function Dashboard() {
-  const [view, setView] = useState("hastalar");
+  const [view, setView] = useState("hastalar"); // hastalar | magaza | finans
   const [patients, setPatients] = useState([]);
   const [requests, setRequests] = useState([]);
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
+  const [ledger, setLedger] = useState([]);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [showPatientForm, setShowPatientForm] = useState(null);
@@ -107,6 +108,7 @@ function Dashboard() {
   const [showOrders, setShowOrders] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showProductForm, setShowProductForm] = useState(null);
+  const [showLedgerForm, setShowLedgerForm] = useState(null);
   const [markDoneTarget, setMarkDoneTarget] = useState(null);
   const [toast, setToast] = useState("");
 
@@ -130,8 +132,12 @@ function Dashboard() {
     const { data } = await supabase.from("products").select("*").order("created_at", { ascending: false });
     setProducts(data || []);
   }, []);
+  const loadLedger = useCallback(async () => {
+    const { data } = await supabase.from("ledger_entries").select("*").order("created_at", { ascending: false });
+    setLedger(data || []);
+  }, []);
 
-  useEffect(() => { loadPatients(); loadRequests(); loadOrders(); loadProducts(); }, [loadPatients, loadRequests, loadOrders, loadProducts]);
+  useEffect(() => { loadPatients(); loadRequests(); loadOrders(); loadProducts(); loadLedger(); }, [loadPatients, loadRequests, loadOrders, loadProducts, loadLedger]);
 
   const selected = patients.find((p) => p.id === selectedId);
   const filtered = patients.filter((p) => (p.pet_name + " " + (p.owner_name || "")).toLowerCase().includes(query.toLowerCase()));
@@ -160,9 +166,17 @@ function Dashboard() {
           <span className="font-display" style={{ color: "var(--cream)", fontSize: 17 }}>Pati Kapım · Yönetici</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <button onClick={() => setView(view === "hastalar" ? "magaza" : "hastalar")} className="btn btn-outline" style={{ borderColor: "rgba(251,248,242,0.3)", color: "var(--cream)", padding: "6px 12px", fontSize: 12 }}>
-            {view === "hastalar" ? <><ShoppingBag size={13} /> Mağaza</> : <><Users size={13} /> Hastalar</>}
-          </button>
+          <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.08)", padding: 3, borderRadius: 10 }}>
+            <button onClick={() => setView("hastalar")} className="btn" style={{ padding: "5px 10px", fontSize: 12, background: view === "hastalar" ? "var(--gold)" : "transparent", color: view === "hastalar" ? "var(--navy)" : "var(--cream)" }}>
+              <Users size={13} /> Hastalar
+            </button>
+            <button onClick={() => setView("magaza")} className="btn" style={{ padding: "5px 10px", fontSize: 12, background: view === "magaza" ? "var(--gold)" : "transparent", color: view === "magaza" ? "var(--navy)" : "var(--cream)" }}>
+              <ShoppingBag size={13} /> Mağaza
+            </button>
+            <button onClick={() => setView("finans")} className="btn" style={{ padding: "5px 10px", fontSize: 12, background: view === "finans" ? "var(--gold)" : "transparent", color: view === "finans" ? "var(--navy)" : "var(--cream)" }}>
+              <BarChart3 size={13} /> Finans
+            </button>
+          </div>
           <button onClick={() => setShowRequests(true)} style={{ position: "relative", background: "none", border: "none", cursor: "pointer" }} title="Randevu talepleri">
             <Bell size={19} color="var(--cream)" />
             {pendingReq > 0 && <Badge count={pendingReq} />}
@@ -177,7 +191,13 @@ function Dashboard() {
         </div>
       </header>
 
-      {view === "hastalar" ? (
+      {view === "finans" && (
+        <FinansView patients={patients} orders={orders} ledger={ledger}
+          onAddLedger={(kind) => setShowLedgerForm(kind)}
+          onMarkPaid={async (id) => { await supabase.from("ledger_entries").update({ status: "odendi", paid_at: new Date().toISOString() }).eq("id", id); loadLedger(); }}
+          onDeleteLedger={async (id) => { await supabase.from("ledger_entries").delete().eq("id", id); loadLedger(); }} />
+      )}
+      {view === "hastalar" && (
         <div className="container-wide" style={{ paddingTop: 16, display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 800 ? "280px 1fr" : "1fr", gap: 16 }}>
             <div className="card" style={{ padding: 12, height: "fit-content" }}>
@@ -235,7 +255,8 @@ function Dashboard() {
             </div>
           </div>
         </div>
-      ) : (
+      )}
+      {view === "magaza" && (
         <ProductsManager products={products} onAdd={() => setShowProductForm("new")} onEdit={(p) => setShowProductForm(p)}
           onDelete={async (id) => { await supabase.from("products").delete().eq("id", id); loadProducts(); flash("Ürün silindi."); }}
           onToggleActive={async (p) => { await supabase.from("products").update({ active: !p.active }).eq("id", p.id); loadProducts(); }} />
@@ -279,6 +300,11 @@ function Dashboard() {
         <ProductFormModal product={showProductForm === "new" ? null : showProductForm}
           onClose={() => setShowProductForm(null)}
           onSaved={() => { loadProducts(); flash(showProductForm === "new" ? "Ürün eklendi." : "Ürün güncellendi."); setShowProductForm(null); }} />
+      )}
+      {showLedgerForm && (
+        <LedgerFormModal kind={showLedgerForm} patients={patients}
+          onClose={() => setShowLedgerForm(null)}
+          onSaved={() => { loadLedger(); flash("Kayıt eklendi."); setShowLedgerForm(null); }} />
       )}
     </div>
   );
@@ -806,6 +832,164 @@ function ProductFormModal({ product, onClose, onSaved }) {
       <Field label="Açıklama (opsiyonel)"><textarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} style={{ resize: "vertical" }} /></Field>
       {err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
       <button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving || uploading}>
+        {saving ? "Kaydediliyor…" : "Kaydet"}
+      </button>
+    </Modal>
+  );
+}
+
+function StatCard({ icon, label, value, color }) {
+  return (
+    <div className="card" style={{ padding: 16, background: "white", flex: 1, minWidth: 140 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <div style={{ width: 26, height: 26, borderRadius: 999, background: color || "var(--navy)", display: "flex", alignItems: "center", justifyContent: "center", color: "white" }}>
+          {icon}
+        </div>
+        <span style={{ fontSize: 12, color: "rgba(42,36,28,0.55)" }}>{label}</span>
+      </div>
+      <div className="font-display" style={{ fontSize: 22 }}>{value}</div>
+    </div>
+  );
+}
+
+function FinansView({ patients, orders, ledger, onAddLedger, onMarkPaid, onDeleteLedger }) {
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
+
+  const vaccinesThisMonth = patients.reduce((sum, p) => {
+    const count = (p.vaccines || []).filter((v) => {
+      if (!v.administered_date) return false;
+      const d = new Date(v.administered_date + "T00:00:00");
+      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+    }).length;
+    return sum + count;
+  }, 0);
+
+  const ordersThisMonth = orders.filter((o) => {
+    const d = new Date(o.created_at);
+    return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+  });
+  const revenueThisMonth = ordersThisMonth.reduce((s, o) => s + Number(o.total), 0);
+
+  const tedarikci = ledger.filter((l) => l.kind === "tedarikci_borcu");
+  const hasta = ledger.filter((l) => l.kind === "hasta_borcu");
+  const tedarikciAcikToplam = tedarikci.filter((l) => l.status === "acik").reduce((s, l) => s + Number(l.amount), 0);
+  const hastaAcikToplam = hasta.filter((l) => l.status === "acik").reduce((s, l) => s + Number(l.amount), 0);
+
+  return (
+    <div className="container-wide" style={{ paddingTop: 16, paddingBottom: 30 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+        <StatCard icon={<Users size={13} />} label="Aktif Hasta" value={patients.length} />
+        <StatCard icon={<Syringe size={13} />} label="Bu Ay Yapılan Aşı" value={vaccinesThisMonth} color="var(--green)" />
+        <StatCard icon={<ShoppingBag size={13} />} label="Bu Ay Sipariş" value={ordersThisMonth.length} color="var(--gold)" />
+        <StatCard icon={<Wallet size={13} />} label="Bu Ay Ciro" value={fmtPrice(revenueThisMonth)} color="var(--gold)" />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 800 ? "1fr 1fr" : "1fr", gap: 16 }}>
+        <LedgerSection title="Tedarikçi Borçlarımız" subtitle="Biz kime ne kadar borçluyuz"
+          icon={<TrendingDown size={15} />} entries={tedarikci} total={tedarikciAcikToplam}
+          onAdd={() => onAddLedger("tedarikci_borcu")} onMarkPaid={onMarkPaid} onDelete={onDeleteLedger} />
+        <LedgerSection title="Hasta Alacaklarımız" subtitle="Kim bize ne kadar borçlu"
+          icon={<TrendingUp size={15} />} entries={hasta} total={hastaAcikToplam}
+          onAdd={() => onAddLedger("hasta_borcu")} onMarkPaid={onMarkPaid} onDelete={onDeleteLedger} />
+      </div>
+    </div>
+  );
+}
+
+function LedgerSection({ title, subtitle, icon, entries, total, onAdd, onMarkPaid, onDelete }) {
+  const acik = entries.filter((e) => e.status === "acik");
+  const odendi = entries.filter((e) => e.status === "odendi");
+  return (
+    <div className="card" style={{ padding: 18, background: "white" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 999, background: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--cream)" }}>{icon}</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
+            <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{subtitle}</div>
+          </div>
+        </div>
+        <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: 12 }} onClick={onAdd}><Plus size={13} /> Ekle</button>
+      </div>
+      <div className="font-mono" style={{ fontSize: 20, fontWeight: 700, margin: "10px 0 14px", color: "var(--red)" }}>{fmtPrice(total)}</div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {acik.length === 0 && <div style={{ fontSize: 12, color: "rgba(42,36,28,0.4)" }}>Açık kayıt yok.</div>}
+        {acik.map((e) => (
+          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--paper)", borderRadius: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.party_name}</div>
+              {e.description && <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{e.description}</div>}
+            </div>
+            <span className="font-mono" style={{ fontSize: 13, fontWeight: 700 }}>{fmtPrice(e.amount)}</span>
+            <button onClick={() => onMarkPaid(e.id)} className="btn btn-outline" style={{ padding: "4px 8px", fontSize: 11 }}>Ödendi</button>
+            <button onClick={() => onDelete(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}><X size={14} /></button>
+          </div>
+        ))}
+      </div>
+
+      {odendi.length > 0 && (
+        <details style={{ marginTop: 12 }}>
+          <summary style={{ fontSize: 11, color: "rgba(42,36,28,0.4)", cursor: "pointer" }}>Ödenenler ({odendi.length})</summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+            {odendi.map((e) => (
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", opacity: 0.5 }}>
+                <span style={{ flex: 1, fontSize: 12 }}>{e.party_name}</span>
+                <span className="font-mono" style={{ fontSize: 12 }}>{fmtPrice(e.amount)}</span>
+                <button onClick={() => onDelete(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}><X size={13} /></button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function LedgerFormModal({ kind, patients, onClose, onSaved }) {
+  const isHasta = kind === "hasta_borcu";
+  const [partyName, setPartyName] = useState("");
+  const [patientId, setPatientId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!partyName || amount === "") { setErr("İsim ve tutar zorunlu."); return; }
+    setSaving(true);
+    const { error } = await supabase.from("ledger_entries").insert({
+      kind, party_name: partyName, patient_id: patientId || null,
+      amount: Number(amount), description: description || null,
+    });
+    setSaving(false);
+    if (error) { setErr("Kaydedilemedi, tekrar deneyin."); return; }
+    onSaved();
+  }
+
+  return (
+    <Modal title={isHasta ? "Hasta Alacağı Ekle" : "Tedarikçi Borcu Ekle"} icon={isHasta ? <TrendingUp size={17} /> : <TrendingDown size={17} />} onClose={onClose}>
+      {isHasta && (
+        <Field label="Hastayla ilişkilendir (opsiyonel)">
+          <select className="input" value={patientId} onChange={(e) => {
+            setPatientId(e.target.value);
+            const p = patients.find((x) => x.id === e.target.value);
+            if (p) setPartyName(p.owner_name || p.pet_name);
+          }}>
+            <option value="">İlişkilendirme</option>
+            {patients.map((p) => <option key={p.id} value={p.id}>{p.owner_name || "—"} ({p.pet_name})</option>)}
+          </select>
+        </Field>
+      )}
+      <Field label={isHasta ? "Kişi adı" : "Tedarikçi adı"}>
+        <input className="input" value={partyName} onChange={(e) => setPartyName(e.target.value)} />
+      </Field>
+      <Field label="Tutar (₺)"><input className="input" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+      <Field label="Not (opsiyonel)"><input className="input" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+      {err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      <button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving}>
         {saving ? "Kaydediliyor…" : "Kaydet"}
       </button>
     </Modal>
