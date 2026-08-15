@@ -318,7 +318,13 @@ function PatientDetail({ patient, origin, onEdit, onDelete, onAddVaccine, onEdit
       <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", margin: "4px 0" }}>
         {patient.species} · {patient.breed || "Irk belirtilmemiş"}{patient.gender ? ` · ${patient.gender}` : ""}
       </p>
-      <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", marginBottom: 14 }}>Sahip: {patient.owner_name || "—"}</p>
+      <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", marginBottom: 4 }}>Sahip: {patient.owner_name || "—"}</p>
+      {(patient.microchip_number || patient.karne_number) && (
+        <p style={{ fontSize: 12, color: "rgba(42,36,28,0.5)", marginBottom: 14 }}>
+          {patient.microchip_number && <>Mikroçip: <span className="font-mono">{patient.microchip_number}</span>{patient.karne_number && "  ·  "}</>}
+          {patient.karne_number && <>Karne No: <span className="font-mono">{patient.karne_number}</span></>}
+        </p>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, background: "white", border: "1px solid rgba(20,40,60,0.12)", borderRadius: 10, padding: "8px 10px", marginBottom: 16 }}>
         <span className="font-mono" style={{ fontSize: 12, color: "rgba(42,36,28,0.6)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{link}</span>
@@ -438,6 +444,8 @@ function PatientFormModal({ patient, onClose, onSaved }) {
   const [breedCustom, setBreedCustom] = useState(initialBreedIsCustom ? patient.breed : "");
   const [gender, setGender] = useState(patient?.gender || "");
   const [ownerName, setOwnerName] = useState(patient?.owner_name || "");
+  const [microchip, setMicrochip] = useState(patient?.microchip_number || "");
+  const [karneNo, setKarneNo] = useState(patient?.karne_number || "");
   const [pin, setPin] = useState(patient?.pin || "");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
@@ -449,7 +457,8 @@ function PatientFormModal({ patient, onClose, onSaved }) {
     setSaving(true);
     const payload = {
       pet_name: petName, species, breed: finalBreed || null, gender: gender || null,
-      owner_name: ownerName || null, pin: pin.trim() || null,
+      owner_name: ownerName || null, microchip_number: microchip.trim() || null,
+      karne_number: karneNo.trim() || null, pin: pin.trim() || null,
     };
     let error;
     if (isEdit) {
@@ -490,6 +499,8 @@ function PatientFormModal({ patient, onClose, onSaved }) {
         </select>
       </Field>
       <Field label="Sahibinin adı"><input className="input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} /></Field>
+      <Field label="Mikroçip numarası (opsiyonel)"><input className="input" value={microchip} onChange={(e) => setMicrochip(e.target.value)} /></Field>
+      <Field label="Karne numarası (opsiyonel)"><input className="input" value={karneNo} onChange={(e) => setKarneNo(e.target.value)} /></Field>
       <Field label="PIN (opsiyonel, ekstra güvenlik için)"><input className="input" inputMode="numeric" placeholder="Boş bırakılabilir" value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
       {err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
       <button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving}>
