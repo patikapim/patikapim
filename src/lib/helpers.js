@@ -121,3 +121,20 @@ export const VACCINE_INFO = {
     { title: "Kuduz", desc: "Ölümcül seyreden kuduz virüsüne karşı koruma sağlar; yasal olarak zorunludur." },
   ],
 };
+
+export const DOG_BREEDS = [
+  "Kangal", "Alman Çoban Köpeği (Alman Kurdu)", "Golden Retriever", "Labrador Retriever",
+  "Pomeranian (Spitz)", "Chihuahua", "Poodle (Kaniş)", "Pug", "Fransız Bulldog", "İngiliz Bulldog",
+  "Rottweiler", "Doberman", "Siberian Husky", "Beagle", "Cocker Spaniel", "Shih Tzu",
+  "Yorkshire Terrier", "Boxer", "Akita", "Belçika Malinois", "Melez / Sokak Köpeği", "Diğer (yazınız)",
+];
+export const CAT_BREEDS = [
+  "Tekir (Melez)", "Van Kedisi", "Ankara Kedisi", "British Shorthair", "Scottish Fold",
+  "Persian (İran Kedisi)", "Siyam (Siamese)", "Maine Coon", "Sphynx", "Ragdoll", "Bengal",
+  "Russian Blue (Rus Mavisi)", "Exotic Shorthair", "Diğer (yazınız)",
+];
+export const GENDERS = ["Dişi", "Erkek", "Kısır Dişi", "Kısır Erkek"];
+
+export function fmtPrice(n) {
+  return new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 }).format(n);
+}
