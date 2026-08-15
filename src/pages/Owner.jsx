@@ -3,9 +3,9 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient.js";
 import {
   PawPrint, Dog, Cat, Lock, Camera, Calendar, AlertTriangle,
-  Check, Send, ShieldAlert, Info, BookOpen
+  Check, Send, ShieldAlert, Info, BookOpen, ShoppingBag, Plus, Minus, X, Banknote
 } from "lucide-react";
-import { fmtDate, stampParts, daysUntil, vaccineStatus, STATUS_LABEL, STATUS_COLOR, VACCINE_INFO } from "../lib/helpers.js";
+import { fmtDate, stampParts, daysUntil, vaccineStatus, STATUS_LABEL, STATUS_COLOR, VACCINE_INFO, fmtPrice } from "../lib/helpers.js";
 
 const SpeciesIcon = ({ species, ...p }) => {
   if (species === "Kedi") return <Cat {...p} />;
@@ -25,6 +25,10 @@ export default function Owner() {
   const [reqSent, setReqSent] = useState(false);
   const [reqLoading, setReqLoading] = useState(false);
   const [tab, setTab] = useState("karne");
+  const [products, setProducts] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [orderSent, setOrderSent] = useState(false);
+  const [orderLoading, setOrderLoading] = useState(false);
   const fileInputRef = useRef(null);
   const verifiedPin = useRef(null);
 
@@ -44,6 +48,14 @@ export default function Owner() {
   }
 
   useEffect(() => { fetchPatient(); /* eslint-disable-next-line */ }, [slug]);
+
+  useEffect(() => {
+    if (status !== "ok") return;
+    (async () => {
+      const { data } = await supabase.from("products").select("*").eq("active", true).order("created_at", { ascending: false });
+      setProducts(data || []);
+    })();
+  }, [status]);
 
   async function submitPin() {
     setPinErr("");
@@ -85,6 +97,33 @@ export default function Owner() {
     else flash("Talep gönderilemedi, tekrar deneyin.");
   }
 
+  function addToCart(product) {
+    setCart((c) => {
+      const existing = c.find((i) => i.product_id === product.id);
+      if (existing) return c.map((i) => i.product_id === product.id ? { ...i, qty: i.qty + 1 } : i);
+      return [...c, { product_id: product.id, name: product.name, price: product.price, qty: 1 }];
+    });
+    flash(`${product.name} sepete eklendi.`);
+  }
+  function changeQty(productId, delta) {
+    setCart((c) => c.map((i) => i.product_id === productId ? { ...i, qty: Math.max(1, i.qty + delta) } : i).filter((i) => i.qty > 0));
+  }
+  function removeFromCart(productId) {
+    setCart((c) => c.filter((i) => i.product_id !== productId));
+  }
+  const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+
+  async function submitOrder() {
+    setOrderLoading(true);
+    const { data, error } = await supabase.rpc("submit_order", {
+      p_slug: slug, p_pin: verifiedPin.current,
+      p_items: cart.map((i) => ({ product_id: i.product_id, qty: i.qty })),
+    });
+    setOrderLoading(false);
+    if (!error && data?.status === "ok") { setOrderSent(true); setCart([]); flash("Siparişiniz alındı."); }
+    else flash("Sipariş gönderilemedi, tekrar deneyin.");
+  }
+
   if (status === "loading") return <CenterMsg><div className="spinner" /></CenterMsg>;
   if (status === "not_found") {
     return (
@@ -118,6 +157,7 @@ export default function Owner() {
   const done = all.filter((v) => v.administered_date).sort((a, b) => new Date(b.administered_date) - new Date(a.administered_date));
   const soonest = planned[0];
   const info = VACCINE_INFO[patient.species] || null;
+  const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
   return (
     <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
@@ -149,7 +189,7 @@ export default function Owner() {
             <div>
               <h1 className="font-display" style={{ fontSize: 24, margin: 0 }}>{patient.pet_name}</h1>
               <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", margin: "2px 0 0" }}>
-                {patient.species}{patient.breed ? ` · ${patient.breed}` : ""}
+                {patient.species}{patient.breed ? ` · ${patient.breed}` : ""}{patient.gender ? ` · ${patient.gender}` : ""}
               </p>
             </div>
           </div>
@@ -161,11 +201,17 @@ export default function Owner() {
         </div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "var(--paper)", padding: 4, borderRadius: 12, border: "1px solid rgba(20,40,60,0.1)" }}>
-          <button onClick={() => setTab("karne")} className="btn" style={{ flex: 1, background: tab === "karne" ? "var(--navy)" : "transparent", color: tab === "karne" ? "var(--cream)" : "var(--ink)", padding: "9px" }}>
-            <PawPrint size={14} /> Aşı Karnesi
+          <button onClick={() => setTab("karne")} className="btn" style={{ flex: 1, background: tab === "karne" ? "var(--navy)" : "transparent", color: tab === "karne" ? "var(--cream)" : "var(--ink)", padding: "9px", fontSize: 12 }}>
+            <PawPrint size={13} /> Karne
           </button>
-          <button onClick={() => setTab("bilgi")} className="btn" style={{ flex: 1, background: tab === "bilgi" ? "var(--navy)" : "transparent", color: tab === "bilgi" ? "var(--cream)" : "var(--ink)", padding: "9px" }}>
-            <BookOpen size={14} /> Bilgilendirme
+          <button onClick={() => setTab("bilgi")} className="btn" style={{ flex: 1, background: tab === "bilgi" ? "var(--navy)" : "transparent", color: tab === "bilgi" ? "var(--cream)" : "var(--ink)", padding: "9px", fontSize: 12 }}>
+            <BookOpen size={13} /> Bilgi
+          </button>
+          <button onClick={() => setTab("magaza")} className="btn" style={{ flex: 1, background: tab === "magaza" ? "var(--navy)" : "transparent", color: tab === "magaza" ? "var(--cream)" : "var(--ink)", padding: "9px", fontSize: 12, position: "relative" }}>
+            <ShoppingBag size={13} /> Mağaza
+            {cartCount > 0 && (
+              <span style={{ position: "absolute", top: 2, right: 8, background: "var(--gold)", color: "var(--navy)", fontSize: 9, fontWeight: 700, borderRadius: 999, minWidth: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{cartCount}</span>
+            )}
           </button>
         </div>
 
@@ -280,6 +326,75 @@ export default function Owner() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === "magaza" && (
+          <div>
+            {orderSent ? (
+              <div className="card" style={{ padding: 24, textAlign: "center" }}>
+                <Check size={28} color="var(--green)" style={{ marginBottom: 8 }} />
+                <div style={{ fontWeight: 700 }}>Siparişiniz alındı!</div>
+                <div style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", marginTop: 4 }}>Kliniğimiz en kısa sürede sizinle iletişime geçecek.</div>
+                <button className="btn btn-outline" style={{ marginTop: 14 }} onClick={() => setOrderSent(false)}>Yeni Sipariş</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+                  {products.length === 0 && (
+                    <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: "24px 0" }}>
+                      Şu anda mağazada ürün yok.
+                    </div>
+                  )}
+                  {products.map((p) => (
+                    <div key={p.id} className="card" style={{ overflow: "hidden", background: "white" }}>
+                      <div style={{ width: "100%", aspectRatio: "1", background: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {p.photo_url
+                          ? <img src={p.photo_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : <ShoppingBag size={26} color="rgba(20,40,60,0.25)" />}
+                      </div>
+                      <div style={{ padding: 10 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
+                        {p.description && <div style={{ fontSize: 11, color: "rgba(42,36,28,0.55)", margin: "2px 0 6px", lineHeight: 1.3 }}>{p.description}</div>}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
+                          <span className="font-mono" style={{ fontWeight: 700, fontSize: 13 }}>{fmtPrice(p.price)}</span>
+                          <button className="btn btn-gold" style={{ padding: "5px 9px", fontSize: 11 }} onClick={() => addToCart(p)}>
+                            <Plus size={12} /> Ekle
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {cart.length > 0 && (
+                  <div className="card" style={{ padding: 16 }}>
+                    <div className="font-mono" style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)", marginBottom: 10 }}>Sepetim</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                      {cart.map((i) => (
+                        <div key={i.product_id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ flex: 1, fontSize: 13 }}>{i.name}</span>
+                          <button onClick={() => changeQty(i.product_id, -1)} className="btn btn-outline" style={{ padding: "2px 7px" }}><Minus size={11} /></button>
+                          <span className="font-mono" style={{ fontSize: 12, minWidth: 16, textAlign: "center" }}>{i.qty}</span>
+                          <button onClick={() => changeQty(i.product_id, 1)} className="btn btn-outline" style={{ padding: "2px 7px" }}><Plus size={11} /></button>
+                          <span className="font-mono" style={{ fontSize: 12, minWidth: 60, textAlign: "right" }}>{fmtPrice(i.price * i.qty)}</span>
+                          <button onClick={() => removeFromCart(i.product_id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}><X size={14} /></button>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 10, borderTop: "1px solid rgba(20,40,60,0.1)", paddingTop: 10 }}>
+                      <span>Toplam</span><span className="font-mono">{fmtPrice(cartTotal)}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "rgba(42,36,28,0.5)", marginBottom: 10 }}>
+                      <Banknote size={13} /> Ödeme seçenekleri: Nakit veya EFT — teslimat sırasında.
+                    </div>
+                    <button className="btn btn-gold" style={{ width: "100%" }} onClick={submitOrder} disabled={orderLoading}>
+                      {orderLoading ? "Gönderiliyor…" : "Sipariş Ver"}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
