@@ -1,12 +1,13 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import {
   genSlug, fmtDate, stampParts, vaccineStatus, STATUS_LABEL, STATUS_COLOR,
-  VACCINE_TEMPLATES, addWeeks, nextAutoVaccine, todayIso,
+  VACCINE_TEMPLATES, addWeeks, nextAutoVaccine, todayIso, DOG_BREEDS, CAT_BREEDS, GENDERS, fmtPrice,
 } from "../lib/helpers.js";
 import {
   Lock, LogOut, Plus, Search, X, Trash2, Syringe, PawPrint, Dog, Cat,
-  Copy, Check, Bell, AlertTriangle, CalendarPlus, CalendarCheck
+  Copy, Check, Bell, AlertTriangle, CalendarPlus, CalendarCheck, Pencil,
+  ShoppingBag, Image as ImageIcon, Users
 } from "lucide-react";
 
 const SpeciesIcon = ({ species, ...p }) => {
@@ -92,14 +93,20 @@ function AdminLogin() {
 }
 
 function Dashboard() {
+  const [view, setView] = useState("hastalar");
   const [patients, setPatients] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [products, setProducts] = useState([]);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
-  const [showNewPatient, setShowNewPatient] = useState(false);
+  const [showPatientForm, setShowPatientForm] = useState(null);
   const [showNewVaccine, setShowNewVaccine] = useState(false);
+  const [editVaccineTarget, setEditVaccineTarget] = useState(null);
   const [showRequests, setShowRequests] = useState(false);
+  const [showOrders, setShowOrders] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showProductForm, setShowProductForm] = useState(null);
   const [markDoneTarget, setMarkDoneTarget] = useState(null);
   const [toast, setToast] = useState("");
 
@@ -111,16 +118,25 @@ function Dashboard() {
   }, []);
   const loadRequests = useCallback(async () => {
     const { data } = await supabase.from("appointment_requests")
-      .select("*, patients(pet_name, owner_name)")
-      .order("created_at", { ascending: false });
+      .select("*, patients(pet_name, owner_name)").order("created_at", { ascending: false });
     setRequests(data || []);
   }, []);
+  const loadOrders = useCallback(async () => {
+    const { data } = await supabase.from("orders")
+      .select("*, patients(pet_name, owner_name)").order("created_at", { ascending: false });
+    setOrders(data || []);
+  }, []);
+  const loadProducts = useCallback(async () => {
+    const { data } = await supabase.from("products").select("*").order("created_at", { ascending: false });
+    setProducts(data || []);
+  }, []);
 
-  useEffect(() => { loadPatients(); loadRequests(); }, [loadPatients, loadRequests]);
+  useEffect(() => { loadPatients(); loadRequests(); loadOrders(); loadProducts(); }, [loadPatients, loadRequests, loadOrders, loadProducts]);
 
   const selected = patients.find((p) => p.id === selectedId);
   const filtered = patients.filter((p) => (p.pet_name + " " + (p.owner_name || "")).toLowerCase().includes(query.toLowerCase()));
-  const pendingCount = requests.filter((r) => r.status === "beklemede").length;
+  const pendingReq = requests.filter((r) => r.status === "beklemede").length;
+  const pendingOrders = orders.filter((o) => o.status === "beklemede").length;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   async function markVaccineDone(vaccine, administeredDate) {
@@ -138,19 +154,22 @@ function Dashboard() {
       {toast && (
         <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "var(--navy)", color: "var(--cream)", padding: "8px 16px", borderRadius: 999, fontSize: 13, fontWeight: 600, maxWidth: "90vw", textAlign: "center" }}>{toast}</div>
       )}
-      <header style={{ background: "var(--navy)", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+      <header style={{ background: "var(--navy)", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src="/logo.png" alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
           <span className="font-display" style={{ color: "var(--cream)", fontSize: 17 }}>Pati Kapım · Yönetici</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <button onClick={() => setShowRequests(true)} style={{ position: "relative", background: "none", border: "none", cursor: "pointer" }}>
+          <button onClick={() => setView(view === "hastalar" ? "magaza" : "hastalar")} className="btn btn-outline" style={{ borderColor: "rgba(251,248,242,0.3)", color: "var(--cream)", padding: "6px 12px", fontSize: 12 }}>
+            {view === "hastalar" ? <><ShoppingBag size={13} /> Mağaza</> : <><Users size={13} /> Hastalar</>}
+          </button>
+          <button onClick={() => setShowRequests(true)} style={{ position: "relative", background: "none", border: "none", cursor: "pointer" }} title="Randevu talepleri">
             <Bell size={19} color="var(--cream)" />
-            {pendingCount > 0 && (
-              <span style={{ position: "absolute", top: -4, right: -6, background: "var(--gold)", color: "var(--navy)", fontSize: 10, fontWeight: 700, borderRadius: 999, minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>
-                {pendingCount}
-              </span>
-            )}
+            {pendingReq > 0 && <Badge count={pendingReq} />}
+          </button>
+          <button onClick={() => setShowOrders(true)} style={{ position: "relative", background: "none", border: "none", cursor: "pointer" }} title="Siparişler">
+            <ShoppingBag size={19} color="var(--cream)" />
+            {pendingOrders > 0 && <Badge count={pendingOrders} />}
           </button>
           <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "rgba(251,248,242,0.7)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
             <LogOut size={15} /> Çıkış
@@ -158,72 +177,85 @@ function Dashboard() {
         </div>
       </header>
 
-      <div className="container-wide" style={{ paddingTop: 16, display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 800 ? "280px 1fr" : "1fr", gap: 16 }}>
-          <div className="card" style={{ padding: 12, height: "fit-content" }}>
-            <div style={{ position: "relative", marginBottom: 10 }}>
-              <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "rgba(20,40,60,0.4)" }} />
-              <input className="input" style={{ paddingLeft: 30 }} placeholder="Hasta / sahip ara…" value={query} onChange={(e) => setQuery(e.target.value)} />
-            </div>
-            <button className="btn btn-primary" style={{ width: "100%", marginBottom: 10 }} onClick={() => setShowNewPatient(true)}>
-              <Plus size={15} /> Yeni Hasta
-            </button>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: "60vh", overflowY: "auto" }}>
-              {filtered.length === 0 && <div style={{ fontSize: 12, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: 16 }}>Hasta bulunamadı.</div>}
-              {filtered.map((p) => (
-                <button key={p.id} onClick={() => setSelectedId(p.id)}
-                  style={{ textAlign: "left", padding: "8px 10px", borderRadius: 10, border: "none", cursor: "pointer",
-                    background: selectedId === p.id ? "var(--navy)" : "transparent", color: selectedId === p.id ? "var(--cream)" : "var(--ink)",
-                    display: "flex", alignItems: "center", gap: 8 }}>
-                  <SpeciesIcon species={p.species} size={16} />
-                  <span style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.pet_name}</div>
-                    <div style={{ fontSize: 11, opacity: 0.65, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.owner_name}</div>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="card" style={{ padding: 20 }}>
-            {!selected && (
-              <div style={{ textAlign: "center", padding: "60px 0", color: "rgba(42,36,28,0.4)" }}>
-                <PawPrint size={32} style={{ opacity: 0.4, marginBottom: 8 }} />
-                <p style={{ fontSize: 13 }}>Detayları görmek için soldan bir hasta seç.</p>
+      {view === "hastalar" ? (
+        <div className="container-wide" style={{ paddingTop: 16, display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 800 ? "280px 1fr" : "1fr", gap: 16 }}>
+            <div className="card" style={{ padding: 12, height: "fit-content" }}>
+              <div style={{ position: "relative", marginBottom: 10 }}>
+                <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "rgba(20,40,60,0.4)" }} />
+                <input className="input" style={{ paddingLeft: 30 }} placeholder="Hasta / sahip ara…" value={query} onChange={(e) => setQuery(e.target.value)} />
               </div>
-            )}
-            {selected && (
-              <PatientDetail
-                patient={selected}
-                origin={origin}
-                onDelete={async () => {
-                  if (!confirm(`${selected.pet_name} kaydı silinsin mi?`)) return;
-                  await supabase.from("patients").delete().eq("id", selected.id);
-                  setSelectedId(null);
-                  loadPatients();
-                  flash("Hasta kaydı silindi.");
-                }}
-                onAddVaccine={() => setShowNewVaccine(true)}
-                onApplySchedule={() => setShowSchedule(true)}
-                onMarkDone={(v) => setMarkDoneTarget(v)}
-                onDeleteVaccine={async (vid) => {
-                  await supabase.from("vaccines").delete().eq("id", vid);
-                  loadPatients();
-                }}
-                onCopyLink={() => flash("Bağlantı kopyalandı.")}
-              />
-            )}
+              <button className="btn btn-primary" style={{ width: "100%", marginBottom: 10 }} onClick={() => setShowPatientForm("new")}>
+                <Plus size={15} /> Yeni Hasta
+              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: "60vh", overflowY: "auto" }}>
+                {filtered.length === 0 && <div style={{ fontSize: 12, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: 16 }}>Hasta bulunamadı.</div>}
+                {filtered.map((p) => (
+                  <button key={p.id} onClick={() => setSelectedId(p.id)}
+                    style={{ textAlign: "left", padding: "8px 10px", borderRadius: 10, border: "none", cursor: "pointer",
+                      background: selectedId === p.id ? "var(--navy)" : "transparent", color: selectedId === p.id ? "var(--cream)" : "var(--ink)",
+                      display: "flex", alignItems: "center", gap: 8 }}>
+                    <SpeciesIcon species={p.species} size={16} />
+                    <span style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.pet_name}</div>
+                      <div style={{ fontSize: 11, opacity: 0.65, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.owner_name}</div>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: 20 }}>
+              {!selected && (
+                <div style={{ textAlign: "center", padding: "60px 0", color: "rgba(42,36,28,0.4)" }}>
+                  <PawPrint size={32} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <p style={{ fontSize: 13 }}>Detayları görmek için soldan bir hasta seç.</p>
+                </div>
+              )}
+              {selected && (
+                <PatientDetail
+                  patient={selected}
+                  origin={origin}
+                  onEdit={() => setShowPatientForm(selected)}
+                  onDelete={async () => {
+                    if (!confirm(`${selected.pet_name} kaydı silinsin mi?`)) return;
+                    await supabase.from("patients").delete().eq("id", selected.id);
+                    setSelectedId(null);
+                    loadPatients();
+                    flash("Hasta kaydı silindi.");
+                  }}
+                  onAddVaccine={() => setShowNewVaccine(true)}
+                  onEditVaccine={(v) => setEditVaccineTarget(v)}
+                  onApplySchedule={() => setShowSchedule(true)}
+                  onMarkDone={(v) => setMarkDoneTarget(v)}
+                  onDeleteVaccine={async (vid) => { await supabase.from("vaccines").delete().eq("id", vid); loadPatients(); }}
+                  onCopyLink={() => flash("Bağlantı kopyalandı.")}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <ProductsManager products={products} onAdd={() => setShowProductForm("new")} onEdit={(p) => setShowProductForm(p)}
+          onDelete={async (id) => { await supabase.from("products").delete().eq("id", id); loadProducts(); flash("Ürün silindi."); }}
+          onToggleActive={async (p) => { await supabase.from("products").update({ active: !p.active }).eq("id", p.id); loadProducts(); }} />
+      )}
 
-      {showNewPatient && (
-        <NewPatientModal onClose={() => setShowNewPatient(false)} onSaved={() => { loadPatients(); flash("Hasta eklendi."); setShowNewPatient(false); }} />
+      {showPatientForm && (
+        <PatientFormModal
+          patient={showPatientForm === "new" ? null : showPatientForm}
+          onClose={() => setShowPatientForm(null)}
+          onSaved={() => { loadPatients(); flash(showPatientForm === "new" ? "Hasta eklendi." : "Hasta güncellendi."); setShowPatientForm(null); }} />
       )}
       {showNewVaccine && selected && (
         <NewVaccineModal patientId={selected.id} petName={selected.pet_name}
           onClose={() => setShowNewVaccine(false)}
           onSaved={() => { loadPatients(); flash("Aşı kaydı eklendi."); setShowNewVaccine(false); }} />
+      )}
+      {editVaccineTarget && (
+        <EditVaccineModal vaccine={editVaccineTarget}
+          onClose={() => setEditVaccineTarget(null)}
+          onSaved={() => { loadPatients(); flash("Aşı kaydı güncellendi."); setEditVaccineTarget(null); }} />
       )}
       {showSchedule && selected && (
         <ScheduleModal patient={selected}
@@ -239,11 +271,28 @@ function Dashboard() {
         <RequestsModal requests={requests} onClose={() => setShowRequests(false)}
           onMark={async (id, status) => { await supabase.from("appointment_requests").update({ status }).eq("id", id); loadRequests(); }} />
       )}
+      {showOrders && (
+        <OrdersModal orders={orders} onClose={() => setShowOrders(false)}
+          onMark={async (id, status) => { await supabase.from("orders").update({ status }).eq("id", id); loadOrders(); }} />
+      )}
+      {showProductForm && (
+        <ProductFormModal product={showProductForm === "new" ? null : showProductForm}
+          onClose={() => setShowProductForm(null)}
+          onSaved={() => { loadProducts(); flash(showProductForm === "new" ? "Ürün eklendi." : "Ürün güncellendi."); setShowProductForm(null); }} />
+      )}
     </div>
   );
 }
 
-function PatientDetail({ patient, origin, onDelete, onAddVaccine, onApplySchedule, onMarkDone, onDeleteVaccine, onCopyLink }) {
+function Badge({ count }) {
+  return (
+    <span style={{ position: "absolute", top: -4, right: -6, background: "var(--gold)", color: "var(--navy)", fontSize: 10, fontWeight: 700, borderRadius: 999, minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>
+      {count}
+    </span>
+  );
+}
+
+function PatientDetail({ patient, origin, onEdit, onDelete, onAddVaccine, onEditVaccine, onApplySchedule, onMarkDone, onDeleteVaccine, onCopyLink }) {
   const link = `${origin}/hasta/${patient.slug}`;
   const all = patient.vaccines || [];
   const planned = all.filter((v) => !v.administered_date).sort((a, b) => new Date(a.planned_date) - new Date(b.planned_date));
@@ -257,11 +306,18 @@ function PatientDetail({ patient, origin, onDelete, onAddVaccine, onApplySchedul
           <SpeciesIcon species={patient.species} size={20} />
           <h3 className="font-display" style={{ fontSize: 22, margin: 0 }}>{patient.pet_name}</h3>
         </div>
-        <button onClick={onDelete} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(162,59,59,0.7)" }}>
-          <Trash2 size={16} />
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onEdit} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(20,40,60,0.5)" }}>
+            <Pencil size={16} />
+          </button>
+          <button onClick={onDelete} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(162,59,59,0.7)" }}>
+            <Trash2 size={16} />
+          </button>
+        </div>
       </div>
-      <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", margin: "4px 0" }}>{patient.species} · {patient.breed || "Irk belirtilmemiş"}</p>
+      <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", margin: "4px 0" }}>
+        {patient.species} · {patient.breed || "Irk belirtilmemiş"}{patient.gender ? ` · ${patient.gender}` : ""}
+      </p>
       <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", marginBottom: 14 }}>Sahip: {patient.owner_name || "—"}</p>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, background: "white", border: "1px solid rgba(20,40,60,0.12)", borderRadius: 10, padding: "8px 10px", marginBottom: 16 }}>
@@ -279,7 +335,7 @@ function PatientDetail({ patient, origin, onDelete, onAddVaccine, onApplySchedul
         <div style={{ display: "flex", gap: 8 }}>
           {hasTemplate && (
             <button className="btn btn-outline" style={{ padding: "7px 12px", fontSize: 12 }} onClick={onApplySchedule}>
-              <CalendarPlus size={13} /> {patient.species} Aşı Programını Uygula
+              <CalendarPlus size={13} /> {patient.species} Programı
             </button>
           )}
           <button className="btn btn-primary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={onAddVaccine}>
@@ -307,6 +363,9 @@ function PatientDetail({ patient, origin, onDelete, onAddVaccine, onApplySchedul
                       {STATUS_LABEL[st]}
                     </span>
                   </div>
+                  <button onClick={() => onEditVaccine(v)} className="btn btn-outline" style={{ padding: "5px 8px", fontSize: 11 }}>
+                    <Pencil size={12} />
+                  </button>
                   <button onClick={() => onMarkDone(v)} className="btn btn-outline" style={{ padding: "5px 9px", fontSize: 11 }}>
                     <CalendarCheck size={12} /> Yapıldı
                   </button>
@@ -346,10 +405,10 @@ function PatientDetail({ patient, origin, onDelete, onAddVaccine, onApplySchedul
   );
 }
 
-function Modal({ title, icon, onClose, children }) {
+function Modal({ title, icon, onClose, children, wide }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(20,40,60,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 40 }} onClick={onClose}>
-      <div className="card" style={{ padding: 22, width: "100%", maxWidth: 400, background: "var(--paper)", maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ padding: 22, width: "100%", maxWidth: wide ? 640 : 400, background: "var(--paper)", maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <h3 className="font-display" style={{ fontSize: 19, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>{icon}{title}</h3>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={18} /></button>
@@ -369,46 +428,78 @@ function Field({ label, children }) {
   );
 }
 
-function NewPatientModal({ onClose, onSaved }) {
-  const [petName, setPetName] = useState("");
-  const [species, setSpecies] = useState("Köpek");
-  const [breed, setBreed] = useState("");
-  const [ownerName, setOwnerName] = useState("");
-  const [pin, setPin] = useState("");
+function PatientFormModal({ patient, onClose, onSaved }) {
+  const isEdit = !!patient;
+  const [petName, setPetName] = useState(patient?.pet_name || "");
+  const [species, setSpecies] = useState(patient?.species || "Köpek");
+  const breedList = species === "Kedi" ? CAT_BREEDS : species === "Köpek" ? DOG_BREEDS : null;
+  const initialBreedIsCustom = patient?.breed && breedList && !breedList.includes(patient.breed);
+  const [breedSelect, setBreedSelect] = useState(initialBreedIsCustom ? "Diğer (yazınız)" : (patient?.breed || ""));
+  const [breedCustom, setBreedCustom] = useState(initialBreedIsCustom ? patient.breed : "");
+  const [gender, setGender] = useState(patient?.gender || "");
+  const [ownerName, setOwnerName] = useState(patient?.owner_name || "");
+  const [pin, setPin] = useState(patient?.pin || "");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const finalBreed = breedSelect === "Diğer (yazınız)" ? breedCustom.trim() : breedSelect;
 
   async function save() {
     if (!petName) { setErr("Hayvanın adı zorunlu."); return; }
     setSaving(true);
-    const slug = genSlug();
-    const { error } = await supabase.from("patients").insert({
-      pet_name: petName, species, breed: breed || null, owner_name: ownerName || null,
-      slug, pin: pin.trim() || null,
-    });
+    const payload = {
+      pet_name: petName, species, breed: finalBreed || null, gender: gender || null,
+      owner_name: ownerName || null, pin: pin.trim() || null,
+    };
+    let error;
+    if (isEdit) {
+      ({ error } = await supabase.from("patients").update(payload).eq("id", patient.id));
+    } else {
+      ({ error } = await supabase.from("patients").insert({ ...payload, slug: genSlug() }));
+    }
     setSaving(false);
     if (error) { setErr("Kaydedilemedi, tekrar deneyin."); return; }
     onSaved();
   }
 
   return (
-    <Modal title="Yeni Hasta" icon={<PawPrint size={17} />} onClose={onClose}>
+    <Modal title={isEdit ? "Hastayı Düzenle" : "Yeni Hasta"} icon={<PawPrint size={17} />} onClose={onClose}>
       <Field label="Hayvanın adı"><input className="input" value={petName} onChange={(e) => setPetName(e.target.value)} /></Field>
       <Field label="Tür">
-        <select className="input" value={species} onChange={(e) => setSpecies(e.target.value)}>
+        <select className="input" value={species} onChange={(e) => { setSpecies(e.target.value); setBreedSelect(""); setBreedCustom(""); }}>
           <option>Köpek</option><option>Kedi</option><option>Diğer</option>
         </select>
       </Field>
-      <Field label="Irk (opsiyonel)"><input className="input" value={breed} onChange={(e) => setBreed(e.target.value)} /></Field>
+      {breedList ? (
+        <Field label="Irk">
+          <select className="input" value={breedSelect} onChange={(e) => setBreedSelect(e.target.value)}>
+            <option value="">Seçiniz</option>
+            {breedList.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+          {breedSelect === "Diğer (yazınız)" && (
+            <input className="input" style={{ marginTop: 6 }} placeholder="Irk adı" value={breedCustom} onChange={(e) => setBreedCustom(e.target.value)} />
+          )}
+        </Field>
+      ) : (
+        <Field label="Irk (opsiyonel)"><input className="input" value={breedCustom} onChange={(e) => setBreedCustom(e.target.value)} /></Field>
+      )}
+      <Field label="Cinsiyet">
+        <select className="input" value={gender} onChange={(e) => setGender(e.target.value)}>
+          <option value="">Belirtilmemiş</option>
+          {GENDERS.map((g) => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </Field>
       <Field label="Sahibinin adı"><input className="input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} /></Field>
       <Field label="PIN (opsiyonel, ekstra güvenlik için)"><input className="input" inputMode="numeric" placeholder="Boş bırakılabilir" value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
       {err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
       <button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving}>
-        {saving ? "Kaydediliyor…" : "Hastayı Kaydet"}
+        {saving ? "Kaydediliyor…" : isEdit ? "Kaydet" : "Hastayı Kaydet"}
       </button>
-      <p style={{ fontSize: 11, color: "rgba(42,36,28,0.45)", marginTop: 10 }}>
-        Kayıttan sonra, hasta seçiliyken "Aşı Programını Uygula" ile standart aşı takvimini otomatik oluşturabilirsin.
-      </p>
+      {!isEdit && (
+        <p style={{ fontSize: 11, color: "rgba(42,36,28,0.45)", marginTop: 10 }}>
+          Kayıttan sonra, hasta seçiliyken "Aşı Programını Uygula" ile standart takvimi otomatik oluşturabilirsin.
+        </p>
+      )}
     </Modal>
   );
 }
@@ -460,6 +551,35 @@ function NewVaccineModal({ patientId, petName, onClose, onSaved }) {
   );
 }
 
+function EditVaccineModal({ vaccine, onClose, onSaved }) {
+  const [name, setName] = useState(vaccine.name);
+  const [dateVal, setDateVal] = useState(vaccine.planned_date);
+  const [notes, setNotes] = useState(vaccine.notes || "");
+  const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!name || !dateVal) { setErr("Aşı adı ve tarih zorunlu."); return; }
+    setSaving(true);
+    const { error } = await supabase.from("vaccines").update({ name, planned_date: dateVal, notes: notes || null }).eq("id", vaccine.id);
+    setSaving(false);
+    if (error) { setErr("Kaydedilemedi, tekrar deneyin."); return; }
+    onSaved();
+  }
+
+  return (
+    <Modal title="Planlanan Aşıyı Düzenle" icon={<Pencil size={17} />} onClose={onClose}>
+      <Field label="Aşı adı"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Planlanan tarih"><input className="input" type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} /></Field>
+      <Field label="Not (opsiyonel)"><input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+      {err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      <button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving}>
+        {saving ? "Kaydediliyor…" : "Kaydet"}
+      </button>
+    </Modal>
+  );
+}
+
 function ScheduleModal({ patient, onClose, onApplied }) {
   const template = VACCINE_TEMPLATES[patient.species] || [];
   const [startDate, setStartDate] = useState(todayIso());
@@ -480,7 +600,7 @@ function ScheduleModal({ patient, onClose, onApplied }) {
   return (
     <Modal title={`${patient.species} Aşı Programı`} icon={<CalendarPlus size={17} />} onClose={onClose}>
       <p style={{ fontSize: 13, color: "rgba(42,36,28,0.6)", marginBottom: 12 }}>
-        {patient.pet_name} için standart {patient.species.toLowerCase()} aşı takvimi, aşağıdaki başlangıç tarihine göre otomatik planlanacak (aşılar 1'er hafta ara ile sıralanır).
+        {patient.pet_name} için standart {patient.species.toLowerCase()} aşı takvimi, aşağıdaki başlangıç tarihine göre otomatik planlanacak. Uygulandıktan sonra her aşıyı ayrı ayrı da düzenleyebilirsin.
       </p>
       <Field label="Başlangıç tarihi (ilk aşı)">
         <input className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -547,6 +667,136 @@ function RequestsModal({ requests, onClose, onMark }) {
           </div>
         ))}
       </div>
+    </Modal>
+  );
+}
+
+function OrdersModal({ orders, onClose, onMark }) {
+  return (
+    <Modal title="Siparişler" icon={<ShoppingBag size={17} />} onClose={onClose} wide>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "65vh", overflowY: "auto" }}>
+        {orders.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: 16 }}>Henüz sipariş yok.</div>}
+        {orders.map((o) => (
+          <div key={o.id} style={{ background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10, padding: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>{o.patients?.owner_name || "—"} <span style={{ fontWeight: 400, opacity: 0.6 }}>· {o.patients?.pet_name}</span></span>
+              <span className="badge" style={{
+                background: o.status === "beklemede" ? "#B4913F1A" : "#5C7A661A",
+                borderColor: o.status === "beklemede" ? "#B4913F4D" : "#5C7A664D",
+                color: o.status === "beklemede" ? "#93711F" : "#3F5A4C",
+              }}>{o.status}</span>
+            </div>
+            <div style={{ margin: "8px 0", fontSize: 12 }}>
+              {(o.items || []).map((it, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", color: "rgba(42,36,28,0.65)" }}>
+                  <span>{it.qty}x {it.name}</span>
+                  <span className="font-mono">{fmtPrice(it.price * it.qty)}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13, borderTop: "1px solid rgba(20,40,60,0.08)", paddingTop: 6 }}>
+              <span>Toplam</span><span className="font-mono">{fmtPrice(o.total)}</span>
+            </div>
+            <div style={{ fontSize: 11, color: "rgba(42,36,28,0.4)", margin: "6px 0" }}>{new Date(o.created_at).toLocaleString("tr-TR")}</div>
+            {o.status === "beklemede" && (
+              <button className="btn btn-outline" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => onMark(o.id, "tamamlandı")}>
+                <Check size={12} /> Tamamlandı olarak işaretle
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+function ProductsManager({ products, onAdd, onEdit, onDelete, onToggleActive }) {
+  return (
+    <div className="container-wide" style={{ paddingTop: 16 }}>
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <h2 className="font-display" style={{ fontSize: 20, margin: 0 }}>Mağaza Ürünleri</h2>
+          <button className="btn btn-primary" onClick={onAdd}><Plus size={15} /> Yeni Ürün</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 700 ? "repeat(auto-fill, minmax(180px, 1fr))" : "1fr 1fr", gap: 12 }}>
+          {products.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)", textAlign: "center", padding: 30, gridColumn: "1 / -1" }}>Henüz ürün eklenmedi.</div>}
+          {products.map((p) => (
+            <div key={p.id} className="card" style={{ background: "white", overflow: "hidden", opacity: p.active ? 1 : 0.5 }}>
+              <div style={{ width: "100%", aspectRatio: "1", background: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {p.photo_url ? <img src={p.photo_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <ImageIcon size={26} color="rgba(20,40,60,0.25)" />}
+              </div>
+              <div style={{ padding: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
+                <div className="font-mono" style={{ fontSize: 12, marginBottom: 8 }}>{fmtPrice(p.price)}</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn btn-outline" style={{ flex: 1, padding: "5px 6px", fontSize: 11 }} onClick={() => onEdit(p)}><Pencil size={11} /></button>
+                  <button className="btn btn-outline" style={{ flex: 1, padding: "5px 6px", fontSize: 11 }} onClick={() => onToggleActive(p)}>{p.active ? "Gizle" : "Göster"}</button>
+                  <button className="btn btn-outline" style={{ padding: "5px 6px", fontSize: 11, color: "var(--red)" }} onClick={() => { if (confirm("Silinsin mi?")) onDelete(p.id); }}><Trash2 size={11} /></button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductFormModal({ product, onClose, onSaved }) {
+  const isEdit = !!product;
+  const [name, setName] = useState(product?.name || "");
+  const [price, setPrice] = useState(product?.price ?? "");
+  const [description, setDescription] = useState(product?.description || "");
+  const [photoUrl, setPhotoUrl] = useState(product?.photo_url || "");
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef(null);
+
+  async function handlePhoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const path = `${Date.now()}-${file.name}`;
+      const { error: upErr } = await supabase.storage.from("product-photos").upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("product-photos").getPublicUrl(path);
+      setPhotoUrl(pub.publicUrl);
+    } catch {
+      setErr("Fotoğraf yüklenemedi.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function save() {
+    if (!name || price === "") { setErr("Ürün adı ve fiyat zorunlu."); return; }
+    setSaving(true);
+    const payload = { name, price: Number(price), description: description || null, photo_url: photoUrl || null };
+    let error;
+    if (isEdit) ({ error } = await supabase.from("products").update(payload).eq("id", product.id));
+    else ({ error } = await supabase.from("products").insert(payload));
+    setSaving(false);
+    if (error) { setErr("Kaydedilemedi, tekrar deneyin."); return; }
+    onSaved();
+  }
+
+  return (
+    <Modal title={isEdit ? "Ürünü Düzenle" : "Yeni Ürün"} icon={<ShoppingBag size={17} />} onClose={onClose}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+        <div onClick={() => fileInputRef.current?.click()} style={{ width: 100, height: 100, borderRadius: 12, background: "white", border: "1px dashed rgba(20,40,60,0.25)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden" }}>
+          {photoUrl ? <img src={photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (uploading ? <div className="spinner" /> : <ImageIcon size={22} color="rgba(20,40,60,0.3)" />)}
+        </div>
+        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhoto} />
+      </div>
+      <Field label="Ürün adı"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Fiyat (₺)"><input className="input" type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+      <Field label="Açıklama (opsiyonel)"><textarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} style={{ resize: "vertical" }} /></Field>
+      {err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      <button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving || uploading}>
+        {saving ? "Kaydediliyor…" : "Kaydet"}
+      </button>
     </Modal>
   );
 }
