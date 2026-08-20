@@ -950,4 +950,310 @@ return (
 <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
 <StatCard icon={<Users size={13} />} label="Aktif Hasta" value={patients.length} onClick={() => setDetail("hasta")} />
 <StatCard icon={<Syringe size={13} />} label="Bu Ay Yapılan Aşı" value={vaccinesThisMonthList.length} color="var(--green)" onClick={() => setDetail("asi")} />
-<StatC
+<StatCard icon={<ShoppingBag size={13} />} label="Bu Ay Sipariş" value={ordersThisMonth.length} color="var(--gold)" onClick={() => setDetail("siparis")} />
+<StatCard icon={<Wallet size={13} />} label="Bu Ay Ciro" value={fmtPrice(revenueThisMonth)} color="var(--gold)" onClick={() => setDetail("ciro")} />
+</div>
+
+<div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 800 ? "1fr 1fr" : "1fr", gap: 16 }}>
+<LedgerSection title="Tedarikçi Borçlarımız" subtitle="Biz kime ne kadar borçluyuz"
+icon={<TrendingDown size={15} />} entries={tedarikci} total={tedarikciAcikToplam}
+onAdd={() => onAddLedger("tedarikci_borcu")} onMarkPaid={onMarkPaid} onDelete={onDeleteLedger} />
+<LedgerSection title="Hasta Alacaklarımız" subtitle="Kim bize ne kadar borçlu · ödendi işaretlenince ciroya eklenir"
+icon={<TrendingUp size={15} />} entries={hasta} total={hastaAcikToplam}
+onAdd={() => onAddLedger("hasta_borcu")} onMarkPaid={onMarkPaid} onDelete={onDeleteLedger} />
+</div>
+
+<PriceListSection vaccinePrices={vaccinePrices} onAdd={onAddPrice} onEdit={onEditPrice} onDelete={onDeletePrice} />
+
+<div className="card" style={{ padding: 18, background: "white", marginTop: 16 }}>
+<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+<div>
+<div style={{ fontWeight: 700, fontSize: 14 }}>Ciro · Gider · Kâr</div>
+<div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{rangeLabel} — tahsil edilen/ödenen tutarlara göre</div>
+</div>
+<div style={{ display: "flex", gap: 4, background: "var(--paper)", padding: 3, borderRadius: 10 }}>
+{[["gun", "Gün"], ["hafta", "Hafta"], ["ay", "Ay"]].map(([key, label]) => (
+<button key={key} onClick={() => setChartRange(key)}
+className="btn" style={{ padding: "5px 12px", fontSize: 12, background: chartRange === key ? "var(--navy)" : "transparent", color: chartRange === key ? "var(--cream)" : "var(--ink)" }}>
+{label}
+</button>
+))}
+</div>
+</div>
+
+<div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 700 ? "220px 1fr" : "1fr", gap: 20, alignItems: "center" }}>
+<div style={{ position: "relative", width: "100%", maxWidth: 220, margin: "0 auto" }}>
+<ResponsiveContainer width="100%" height={220}>
+<PieChart>
+<Pie data={donutData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={95} paddingAngle={3} strokeWidth={0}>
+<Cell fill="#B4913F" />
+<Cell fill="#A23B3B" />
+</Pie>
+<Tooltip formatter={(v) => fmtPrice(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+</PieChart>
+</ResponsiveContainer>
+<div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", textAlign: "center", pointerEvents: "none" }}>
+<div style={{ fontSize: 10, color: "rgba(42,36,28,0.5)", fontWeight: 600, letterSpacing: 0.5 }}>KÂR</div>
+<div className="font-display" style={{ fontSize: 18, color: karRange >= 0 ? "var(--green)" : "var(--red)" }}>{fmtPrice(karRange)}</div>
+</div>
+</div>
+
+<div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--paper)", borderRadius: 12 }}>
+<div style={{ width: 10, height: 10, borderRadius: 999, background: "#B4913F", flexShrink: 0 }} />
+<div style={{ flex: 1 }}>
+<div style={{ fontSize: 12, color: "rgba(42,36,28,0.55)" }}>Toplam Ciro</div>
+<div className="font-mono" style={{ fontWeight: 700, fontSize: 16 }}>{fmtPrice(ciroRange)}</div>
+</div>
+</div>
+<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--paper)", borderRadius: 12 }}>
+<div style={{ width: 10, height: 10, borderRadius: 999, background: "#A23B3B", flexShrink: 0 }} />
+<div style={{ flex: 1 }}>
+<div style={{ fontSize: 12, color: "rgba(42,36,28,0.55)" }}>Toplam Gider</div>
+<div className="font-mono" style={{ fontWeight: 700, fontSize: 16 }}>{fmtPrice(giderRange)}</div>
+</div>
+</div>
+<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--paper)", borderRadius: 12 }}>
+<div style={{ width: 10, height: 10, borderRadius: 999, background: karRange >= 0 ? "#5C7A66" : "#A23B3B", flexShrink: 0 }} />
+<div style={{ flex: 1 }}>
+<div style={{ fontSize: 12, color: "rgba(42,36,28,0.55)" }}>Kâr</div>
+<div className="font-mono" style={{ fontWeight: 700, fontSize: 16, color: karRange >= 0 ? "var(--green)" : "var(--red)" }}>{fmtPrice(karRange)}</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+{detail === "hasta" && (
+<Modal title="Aktif Hastalar" icon={<Users size={17} />} onClose={() => setDetail(null)} wide>
+<div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "60vh", overflowY: "auto" }}>
+{patients.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Henüz hasta yok.</div>}
+{patients.map((p) => (
+<div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10 }}>
+<SpeciesIcon species={p.species} size={16} />
+<div style={{ flex: 1 }}>
+<div style={{ fontWeight: 600, fontSize: 13 }}>{p.pet_name}</div>
+<div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{p.species}{p.breed ? ` · ${p.breed}` : ""} · {p.owner_name || "—"}</div>
+</div>
+</div>
+))}
+</div>
+</Modal>
+)}
+
+{detail === "asi" && (
+<Modal title="Bu Ay Yapılan Aşılar" icon={<Syringe size={17} />} onClose={() => setDetail(null)} wide>
+<div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "60vh", overflowY: "auto" }}>
+{vaccinesThisMonthList.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Bu ay henüz aşı yapılmadı.</div>}
+{vaccinesThisMonthList.map((v) => (
+<div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10 }}>
+<div style={{ flex: 1 }}>
+<div style={{ fontWeight: 600, fontSize: 13 }}>{v.name} <span style={{ fontWeight: 400, opacity: 0.6 }}>· {v.petName}</span></div>
+<div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{v.ownerName || "—"}</div>
+</div>
+<span className="font-mono" style={{ fontSize: 12, color: "rgba(42,36,28,0.55)" }}>{fmtDate(v.administered_date)}</span>
+</div>
+))}
+</div>
+</Modal>
+)}
+
+{detail === "siparis" && (
+<OrdersModal orders={ordersThisMonth} onClose={() => setDetail(null)} onMark={onMarkOrder} />
+)}
+
+{detail === "ciro" && (
+<Modal title="Bu Ay Ciro" icon={<Wallet size={17} />} onClose={() => setDetail(null)} wide>
+<div style={{ fontSize: 12, fontWeight: 700, color: "rgba(42,36,28,0.5)", marginBottom: 8 }}>MAĞAZA SİPARİŞLERİ ({ordersThisMonth.length})</div>
+<div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+{ordersThisMonth.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Bu ay sipariş yok.</div>}
+{ordersThisMonth.map((o) => (
+<div key={o.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10, fontSize: 13 }}>
+<span>{o.patients?.owner_name || "—"} · {o.patients?.pet_name}</span>
+<span className="font-mono" style={{ fontWeight: 700 }}>{fmtPrice(o.total)}</span>
+</div>
+))}
+</div>
+<div style={{ fontSize: 12, fontWeight: 700, color: "rgba(42,36,28,0.5)", marginBottom: 8 }}>AŞI ÖDEMELERİ ({vaccinePaymentsThisMonth.length})</div>
+<div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+{vaccinePaymentsThisMonth.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Bu ay aşı ödemesi yok.</div>}
+{vaccinePaymentsThisMonth.map((v) => (
+<div key={v.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10, fontSize: 13 }}>
+<span>{v.vaccine_name}</span>
+<span className="font-mono" style={{ fontWeight: 700 }}>{fmtPrice(v.amount)}</span>
+</div>
+))}
+</div>
+<div style={{ fontSize: 12, fontWeight: 700, color: "rgba(42,36,28,0.5)", marginBottom: 8 }}>TAHSİL EDİLEN HASTA ÖDEMELERİ ({hastaPaymentsThisMonth.length})</div>
+<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+{hastaPaymentsThisMonth.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Bu ay tahsilat yok.</div>}
+{hastaPaymentsThisMonth.map((l) => (
+<div key={l.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10, fontSize: 13 }}>
+<span>{l.party_name}</span>
+<span className="font-mono" style={{ fontWeight: 700 }}>{fmtPrice(l.amount)}</span>
+</div>
+))}
+</div>
+</Modal>
+)}
+</div>
+);
+}
+
+function LedgerSection({ title, subtitle, icon, entries, total, onAdd, onMarkPaid, onDelete }) {
+const acik = entries.filter((e) => e.status === "acik");
+const odendi = entries.filter((e) => e.status === "odendi");
+return (
+<div className="card" style={{ padding: 18, background: "white" }}>
+<div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 4 }}>
+<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+<div style={{ width: 26, height: 26, borderRadius: 999, background: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--cream)" }}>{icon}</div>
+<div>
+<div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
+<div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{subtitle}</div>
+</div>
+</div>
+<button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: 12 }} onClick={onAdd}><Plus size={13} /> Ekle</button>
+</div>
+<div className="font-mono" style={{ fontSize: 20, fontWeight: 700, margin: "10px 0 14px", color: "var(--red)" }}>{fmtPrice(total)}</div>
+
+<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+{acik.length === 0 && <div style={{ fontSize: 12, color: "rgba(42,36,28,0.4)" }}>Açık kayıt yok.</div>}
+{acik.map((e) => (
+<div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--paper)", borderRadius: 10 }}>
+<div style={{ flex: 1, minWidth: 0 }}>
+<div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.party_name}</div>
+{e.description && <div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>{e.description}</div>}
+</div>
+<span className="font-mono" style={{ fontSize: 13, fontWeight: 700 }}>{fmtPrice(e.amount)}</span>
+<button onClick={() => onMarkPaid(e.id)} className="btn btn-outline" style={{ padding: "4px 8px", fontSize: 11 }}>Ödendi</button>
+<button onClick={() => onDelete(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}><X size={14} /></button>
+</div>
+))}
+</div>
+
+{odendi.length > 0 && (
+<details style={{ marginTop: 12 }}>
+<summary style={{ fontSize: 11, color: "rgba(42,36,28,0.4)", cursor: "pointer" }}>Ödenenler ({odendi.length})</summary>
+<div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+{odendi.map((e) => (
+<div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", opacity: 0.5 }}>
+<span style={{ flex: 1, fontSize: 12 }}>{e.party_name}</span>
+<span className="font-mono" style={{ fontSize: 12 }}>{fmtPrice(e.amount)}</span>
+<button onClick={() => onDelete(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}><X size={13} /></button>
+</div>
+))}
+</div>
+</details>
+)}
+</div>
+);
+}
+
+function LedgerFormModal({ kind, patients, onClose, onSaved }) {
+const isHasta = kind === "hasta_borcu";
+const [partyName, setPartyName] = useState("");
+const [patientId, setPatientId] = useState("");
+const [amount, setAmount] = useState("");
+const [description, setDescription] = useState("");
+const [err, setErr] = useState("");
+const [saving, setSaving] = useState(false);
+
+async function save() {
+if (!partyName || amount === "") { setErr("İsim ve tutar zorunlu."); return; }
+setSaving(true);
+const { error } = await supabase.from("ledger_entries").insert({
+kind, party_name: partyName, patient_id: patientId || null,
+amount: Number(amount), description: description || null,
+});
+setSaving(false);
+if (error) { setErr("Kaydedilemedi, tekrar deneyin."); return; }
+onSaved();
+}
+
+return (
+<Modal title={isHasta ? "Hasta Alacağı Ekle" : "Tedarikçi Borcu Ekle"} icon={isHasta ? <TrendingUp size={17} /> : <TrendingDown size={17} />} onClose={onClose}>
+{isHasta && (
+<Field label="Hastayla ilişkilendir (opsiyonel)">
+<select className="input" value={patientId} onChange={(e) => {
+setPatientId(e.target.value);
+const p = patients.find((x) => x.id === e.target.value);
+if (p) setPartyName(p.owner_name || p.pet_name);
+}}>
+<option value="">İlişkilendirme</option>
+{patients.map((p) => <option key={p.id} value={p.id}>{p.owner_name || "—"} ({p.pet_name})</option>)}
+</select>
+</Field>
+)}
+<Field label={isHasta ? "Kişi adı" : "Tedarikçi adı"}>
+<input className="input" value={partyName} onChange={(e) => setPartyName(e.target.value)} />
+</Field>
+<Field label="Tutar (₺)"><input className="input" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+<Field label="Not (opsiyonel)"><input className="input" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+{err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+<button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving}>
+{saving ? "Kaydediliyor…" : "Kaydet"}
+</button>
+</Modal>
+);
+}
+
+function PriceListSection({ vaccinePrices, onAdd, onEdit, onDelete }) {
+return (
+<div className="card" style={{ padding: 18, background: "white", marginTop: 16 }}>
+<div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
+<div>
+<div style={{ fontWeight: 700, fontSize: 14 }}>Aşı Fiyat Listesi</div>
+<div style={{ fontSize: 11, color: "rgba(42,36,28,0.5)" }}>Bir aşıyı "Yapıldı" işaretlerken burada tanımlı fiyat otomatik önerilir ve ciroya eklenir</div>
+</div>
+<button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: 12 }} onClick={onAdd}><Plus size={13} /> Ekle</button>
+</div>
+<div style={{ display: "grid", gridTemplateColumns: window.innerWidth > 700 ? "repeat(auto-fill, minmax(200px, 1fr))" : "1fr", gap: 8 }}>
+{vaccinePrices.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Henüz fiyat tanımlanmadı.</div>}
+{vaccinePrices.map((p) => (
+<div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--paper)", borderRadius: 10 }}>
+<div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+<span className="font-mono" style={{ fontSize: 13, fontWeight: 700 }}>{fmtPrice(p.price)}</span>
+<button onClick={() => onEdit(p)} className="btn btn-outline" style={{ padding: "4px 7px", fontSize: 11 }}><Pencil size={11} /></button>
+<button onClick={() => onDelete(p.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}><X size={14} /></button>
+</div>
+))}
+</div>
+</div>
+);
+}
+
+function PriceFormModal({ priceEntry, onClose, onSaved }) {
+const isEdit = !!priceEntry;
+const [name, setName] = useState(priceEntry?.name || "");
+const [price, setPrice] = useState(priceEntry?.price ?? "");
+const [err, setErr] = useState("");
+const [saving, setSaving] = useState(false);
+
+async function save() {
+if (!name || price === "") { setErr("Aşı adı ve fiyat zorunlu."); return; }
+setSaving(true);
+let error;
+if (isEdit) {
+({ error } = await supabase.from("vaccine_prices").update({ name, price: Number(price) }).eq("id", priceEntry.id));
+} else {
+({ error } = await supabase.from("vaccine_prices").insert({ name, price: Number(price) }));
+}
+setSaving(false);
+if (error) { setErr(error.code === "23505" ? "Bu isimde bir fiyat zaten var." : "Kaydedilemedi, tekrar deneyin."); return; }
+onSaved();
+}
+
+return (
+<Modal title={isEdit ? "Fiyatı Düzenle" : "Yeni Aşı Fiyatı"} icon={<Wallet size={17} />} onClose={onClose}>
+<Field label="Aşı adı (aşı ekleme ekranındaki adla birebir aynı olmalı, örn. Kuduz)">
+<input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+</Field>
+<Field label="Fiyat (₺)"><input className="input" type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+{err && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+<button className="btn btn-primary" style={{ width: "100%", marginTop: 6 }} onClick={save} disabled={saving}>
+{saving ? "Kaydediliyor…" : "Kaydet"}
+</button>
+</Modal>
+);
+}
