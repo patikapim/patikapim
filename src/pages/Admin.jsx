@@ -1,8 +1,3 @@
-
-Fikret Orha <fikretorha@gmail.com>
-12:50 (0 dakika önce)
-Alıcı: ben
-
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import {
