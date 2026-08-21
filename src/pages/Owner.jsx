@@ -31,6 +31,7 @@ export default function Owner() {
   const [cart, setCart] = useState([]);
   const [orderSent, setOrderSent] = useState(false);
   const [orderLoading, setOrderLoading] = useState(false);
+  const [survey, setSurvey] = useState(null);
   const fileInputRef = useRef(null);
   const verifiedPin = useRef(null);
 
@@ -56,6 +57,14 @@ export default function Owner() {
     (async () => {
       const { data } = await supabase.from("products").select("*").eq("active", true).order("created_at", { ascending: false });
       setProducts(data || []);
+    })();
+  }, [status]);
+
+  useEffect(() => {
+    if (status !== "ok") return;
+    (async () => {
+      const { data } = await supabase.rpc("get_pending_survey", { p_slug: slug, p_pin: verifiedPin.current });
+      if (data?.status === "ok" && data.survey) setSurvey(data.survey);
     })();
   }, [status]);
 
@@ -344,8 +353,14 @@ export default function Owner() {
                 <Accordion id="irk" open={openSection === "irk"} onToggle={setOpenSection} icon={<Heart size={15} />} title={patient.breed ? `${patient.breed} — Irk Bilgisi` : "Genel Sağlık Notu"}>
                   {breedInfo && (
                     <>
-                      <div style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", lineHeight: 1.4, marginBottom: 8 }}><strong>Genetik yatkınlık:</strong> {breedInfo.risk}</div>
-                      <div style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", lineHeight: 1.4, marginBottom: 10 }}><strong>Öneri:</strong> {breedInfo.tip}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(42,36,28,0.5)", marginBottom: 4 }}>GENETİK YATKINLIKLAR</div>
+                      <ul style={{ margin: "0 0 10px", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+                        {breedInfo.risks.map((r, i) => <li key={i} style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", lineHeight: 1.4 }}>{r}</li>)}
+                      </ul>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(42,36,28,0.5)", marginBottom: 4 }}>ÖNERİLER</div>
+                      <ul style={{ margin: "0 0 10px", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+                        {breedInfo.tips.map((t, i) => <li key={i} style={{ fontSize: 13, color: "rgba(42,36,28,0.65)", lineHeight: 1.4 }}>{t}</li>)}
+                      </ul>
                     </>
                   )}
                   {patient.species === "Kedi" && (
@@ -443,6 +458,11 @@ export default function Owner() {
           <ShieldAlert size={12} /> Bu bağlantıyı yalnızca güvendiğiniz kişilerle paylaşın.
         </div>
       </div>
+
+      {survey && (
+        <SurveyModal survey={survey} slug={slug} pin={verifiedPin.current}
+          onDone={() => { setSurvey(null); flash("Geri bildiriminiz için teşekkürler!"); }} />
+      )}
     </div>
   );
 }
@@ -467,6 +487,91 @@ function Accordion({ id, open, onToggle, icon, title, children }) {
         <ChevronDown size={16} color="rgba(20,40,60,0.4)" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
       </button>
       {open && <div style={{ padding: "0 14px 14px 50px" }}>{children}</div>}
+    </div>
+  );
+}
+
+const SYMPTOM_OPTIONS = ["Kusma", "İshal", "Ateş", "Halsizlik"];
+
+function SurveyModal({ survey, slug, pin, onDone }) {
+  const [phase, setPhase] = useState("q1"); // q1 | q1_detay | q2 | q2_detay
+  const [problemVar, setProblemVar] = useState(null);
+  const [problemDetay, setProblemDetay] = useState("");
+  const [semptomlar, setSemptomlar] = useState([]);
+  const [memnun, setMemnun] = useState(null);
+  const [memnuniyetDetay, setMemnuniyetDetay] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  function toggleSemptom(s) {
+    setSemptomlar((list) => list.includes(s) ? list.filter((x) => x !== s) : [...list, s]);
+  }
+
+  async function submitAll(finalMemnun, finalMemnuniyetDetay) {
+    setSubmitting(true);
+    await supabase.rpc("submit_survey", {
+      p_slug: slug, p_pin: pin, p_survey_id: survey.id,
+      p_problem_var: problemVar, p_problem_detay: problemDetay || null,
+      p_semptomlar: semptomlar.length ? semptomlar : null,
+      p_memnun: finalMemnun, p_memnuniyet_detay: finalMemnuniyetDetay || null,
+    });
+    setSubmitting(false);
+    onDone();
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(20,40,60,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 60 }}>
+      <div className="card" style={{ padding: 24, width: "100%", maxWidth: 380, background: "var(--paper)" }}>
+        <div className="font-mono" style={{ fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: "rgba(42,36,28,0.5)", marginBottom: 10 }}>
+          Kısa Ziyaret Anketi
+        </div>
+
+        {phase === "q1" && (
+          <>
+            <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Aşı sonrasında bir problem oldu mu?</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setProblemVar(false); setPhase("q2"); }}>Hayır</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { setProblemVar(true); setPhase("q1_detay"); }}>Evet</button>
+            </div>
+          </>
+        )}
+
+        {phase === "q1_detay" && (
+          <>
+            <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Ne oldu, kısaca anlatır mısınız?</p>
+            <textarea className="input" rows={3} placeholder="Not (opsiyonel)" value={problemDetay} onChange={(e) => setProblemDetay(e.target.value)} style={{ marginBottom: 12, resize: "vertical" }} />
+            <div style={{ fontSize: 12, color: "rgba(42,36,28,0.5)", marginBottom: 8 }}>İsterseniz belirtileri işaretleyin (opsiyonel):</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+              {SYMPTOM_OPTIONS.map((s) => (
+                <button key={s} onClick={() => toggleSemptom(s)}
+                  className="btn" style={{ padding: "6px 12px", fontSize: 12, background: semptomlar.includes(s) ? "var(--navy)" : "white", color: semptomlar.includes(s) ? "var(--cream)" : "var(--ink)", border: "1px solid rgba(20,40,60,0.15)" }}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => setPhase("q2")}>Devam Et</button>
+          </>
+        )}
+
+        {phase === "q2" && (
+          <>
+            <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Son ziyaretimizden memnun kaldınız mı?</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setMemnun(false); setPhase("q2_detay"); }}>Hayır</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={submitting} onClick={() => { setMemnun(true); submitAll(true, ""); }}>Evet</button>
+            </div>
+          </>
+        )}
+
+        {phase === "q2_detay" && (
+          <>
+            <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Bize nedenini yazar mısınız?</p>
+            <textarea className="input" rows={3} placeholder="Not (opsiyonel)" value={memnuniyetDetay} onChange={(e) => setMemnuniyetDetay(e.target.value)} style={{ marginBottom: 14, resize: "vertical" }} />
+            <button className="btn btn-primary" style={{ width: "100%" }} disabled={submitting} onClick={() => submitAll(false, memnuniyetDetay)}>
+              {submitting ? "Gönderiliyor…" : "Gönder"}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
