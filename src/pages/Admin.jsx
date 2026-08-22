@@ -229,7 +229,8 @@ onMarkOrder={async (id, status) => { await supabase.from("orders").update({ stat
 onMarkPaid={async (id) => { await supabase.from("ledger_entries").update({ status: "odendi", paid_at: new Date().toISOString() }).eq("id", id); loadLedger(); }}
 onDeleteLedger={async (id) => { await supabase.from("ledger_entries").delete().eq("id", id); loadLedger(); }}
 onAddPrice={() => setShowPriceForm("new")} onEditPrice={(p) => setShowPriceForm(p)}
-onDeletePrice={async (id) => { await supabase.from("vaccine_prices").delete().eq("id", id); loadVaccinePrices(); }} />
+onDeletePrice={async (id) => { await supabase.from("vaccine_prices").delete().eq("id", id); loadVaccinePrices(); }}
+onDeletePayment={async (id) => { await supabase.from("vaccine_payments").delete().eq("id", id); loadVaccinePayments(); }} />
 )}
 {view === "hastalar" && (
 <div className="container-wide" style={{ paddingTop: 16, display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
@@ -282,7 +283,7 @@ onAddVaccine={() => setShowNewVaccine(true)}
 onEditVaccine={(v) => setEditVaccineTarget(v)}
 onApplySchedule={() => setShowSchedule(true)}
 onMarkDone={(v) => setMarkDoneTarget(v)}
-onDeleteVaccine={async (vid) => { await supabase.from("vaccines").delete().eq("id", vid); loadPatients(); }}
+onDeleteVaccine={async (vid) => { await supabase.from("vaccine_payments").delete().eq("vaccine_id", vid); await supabase.from("vaccines").delete().eq("id", vid); loadVaccinePayments(); loadPatients(); }}
 onCopyLink={() => flash("Bağlantı kopyalandı.")}
 />
 )}
@@ -967,7 +968,7 @@ return (
 );
 }
 
-function FinansView({ patients, orders, ledger, vaccinePrices, vaccinePayments, onAddLedger, onMarkOrder, onMarkPaid, onDeleteLedger, onAddPrice, onEditPrice, onDeletePrice }) {
+function FinansView({ patients, orders, ledger, vaccinePrices, vaccinePayments, onAddLedger, onMarkOrder, onMarkPaid, onDeleteLedger, onAddPrice, onEditPrice, onDeletePrice, onDeletePayment }) {
 const [detail, setDetail] = useState(null); // null | 'hasta' | 'asi' | 'siparis' | 'ciro'
 const [chartRange, setChartRange] = useState("ay"); // gun | hafta | ay
 const now = new Date();
@@ -1166,9 +1167,10 @@ className="btn" style={{ padding: "5px 12px", fontSize: 12, background: chartRan
 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
 {vaccinePaymentsThisMonth.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Bu ay aşı ödemesi yok.</div>}
 {vaccinePaymentsThisMonth.map((v) => (
-<div key={v.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10, fontSize: 13 }}>
-<span>{v.vaccine_name}</span>
+<div key={v.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10, fontSize: 13 }}>
+<span style={{ flex: 1 }}>{v.vaccine_name}</span>
 <span className="font-mono" style={{ fontWeight: 700 }}>{fmtPrice(v.amount)}</span>
+<button onClick={() => onDeletePayment(v.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}><X size={14} /></button>
 </div>
 ))}
 </div>
@@ -1201,9 +1203,10 @@ className="btn" style={{ padding: "5px 12px", fontSize: 12, background: chartRan
 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
 {vaccinePaymentsInRange.length === 0 && <div style={{ fontSize: 13, color: "rgba(42,36,28,0.4)" }}>Bu aralıkta aşı ödemesi yok.</div>}
 {vaccinePaymentsInRange.map((v) => (
-<div key={v.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10, fontSize: 13 }}>
-<span>{v.vaccine_name} <span className="font-mono" style={{ opacity: 0.5 }}>· {new Date(v.created_at).toLocaleString("tr-TR")}</span></span>
+<div key={v.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "white", border: "1px solid rgba(20,40,60,0.1)", borderRadius: 10, fontSize: 13 }}>
+<span style={{ flex: 1 }}>{v.vaccine_name} <span className="font-mono" style={{ opacity: 0.5 }}>· {new Date(v.created_at).toLocaleString("tr-TR")}</span></span>
 <span className="font-mono" style={{ fontWeight: 700 }}>{fmtPrice(v.amount)}</span>
+<button onClick={() => onDeletePayment(v.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(42,36,28,0.3)" }}><X size={14} /></button>
 </div>
 ))}
 </div>
